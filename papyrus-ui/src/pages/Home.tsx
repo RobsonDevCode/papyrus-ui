@@ -1,6 +1,7 @@
 import React from "react";
 import Button from "../components/common/Button";
 import Navbar from "../components/common/Navigation";
+import Card from "../components/common/Card";
 
 const Home: React.FC = () => {
   return (
@@ -24,7 +25,7 @@ const Home: React.FC = () => {
         <div className="text-center">
           <div className="inline-flex items-center bg-white/40 backdrop-blur-sm border border-amber-200/50 rounded-full px-4 py-2 mb-8">
             <span className="text-amber-800 text-sm font-medium">
-              ✨ Transform your PDF reading experience
+              ✨ Transform your studying experience
             </span>
           </div>
 
@@ -52,38 +53,25 @@ const Home: React.FC = () => {
 
           {/* Feature Cards */}
           <div className="grid md:grid-cols-3 gap-8 mt-20">
-            <div className="bg-white/30 backdrop-blur-sm rounded-2xl p-8 border border-amber-200/30 hover:bg-white/40 transition-all duration-300 hover:scale-105">
-              <div className="text-4xl mb-4">📤</div>
-              <h3 className="text-xl font-semibold text-amber-900 mb-3">
-                Easy Upload
-              </h3>
-              <p className="text-amber-700">
-                Drag and drop your PDF files. We'll handle the rest with
-                lightning-fast processing.
-              </p>
-            </div>
+             <Card title=" Instant AI Processing" icon="📤" 
+             displayText="Upload any PDF and watch AI instantly transform it into a smart, searchable audiobook. 
+             Lightning-fast processing means you're listening and learning within seconds, 
+             not hours." 
+             displaytextColour="text-amber-700"
+              titleTextColour="text-amber-900"/>
 
-            <div className="bg-white/30 backdrop-blur-sm rounded-2xl p-8 border border-amber-200/30 hover:bg-white/40 transition-all duration-300 hover:scale-105">
-              <div className="text-4xl mb-4">📖</div>
-              <h3 className="text-xl font-semibold text-amber-900 mb-3">
-                Beautiful Reading
-              </h3>
-              <p className="text-amber-700">
-                Clean, focused reading experience with customizable themes and
-                layouts.
-              </p>
-            </div>
+             <Card title="Improved Studying" icon="📖" 
+             displayText="Let advanced AI read aloud while intelligently highlighting key concepts, taking contextual notes, 
+                and adapting to your learning pace.
+               Retain 3x more information through multi-sensory engagement."
+             displaytextColour="text-amber-700"
+             titleTextColour="text-amber-900"/>
 
-            <div className="bg-white/30 backdrop-blur-sm rounded-2xl p-8 border border-amber-200/30 hover:bg-white/40 transition-all duration-300 hover:scale-105">
-              <div className="text-4xl mb-4">🗂️</div>
-              <h3 className="text-xl font-semibold text-amber-900 mb-3">
-                Smart Organization
-              </h3>
-              <p className="text-amber-700">
-                Automatically organize your library with tags, search, and
-                collections.
-              </p>
-            </div>
+            <Card title="Smart Organization" icon="🗂️" displayText="AI automatically categorizes, tags, and connects your materials. Find any concept across your entire library instantly,
+             track learning progress, and get personalized study recommendations." 
+             displaytextColour="text-amber-700"
+             titleTextColour="text-amber-900"/>
+            
           </div>
         </div>
       </main>

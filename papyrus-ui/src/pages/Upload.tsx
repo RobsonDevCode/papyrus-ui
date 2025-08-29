@@ -1,58 +1,69 @@
-import React, { useState, useCallback } from "react";
-import Button from "../components/common/Button";
-import Navbar from "../components/common/Navigation";
+import React, { useState, useCallback } from 'react';
+import Button from '../components/common/Button';
+import { papyrusApi } from '../services/PapyrusAiApi';
+import Navbar from '../components/common/Navigation';
 
 interface UploadState {
   isDragging: boolean;
   isUploading: boolean;
-  uploadProgress: number;
-  uploadedFile: File | null;
+  isSuccess: boolean;
+  uploadedFileName: string | null;
   error: string | null;
 }
 
 const Upload: React.FC = () => {
-
-  const fileSizeLimit = 50 * 1024 * 1024 //50 mb
-   const [uploadState, setUploadState] = useState<UploadState>({
+  const [uploadState, setUploadState] = useState<UploadState>({
     isDragging: false,
     isUploading: false,
-    uploadProgress: 0,
-    uploadedFile: null,
+    isSuccess: false,
+    uploadedFileName: null,
     error: null,
   });
 
+  // Handle file validation
   const validateFile = (file: File): string | null => {
-    if(file.type != `application/pdf`) {
-        return 'Please upload a pdf file only.';
+    if (file.type !== 'application/pdf') {
+      return 'Please upload a PDF file only.';
     }
-
-    if(file.size > fileSizeLimit){
-        return 'File size must be less than 50mb';
+    if (file.size > 50 * 1024 * 1024) { // 50MB limit
+      return 'File size must be less than 50MB.';
     }
-
     return null;
-  } 
+  };
 
-   const uploadFile = async (file: File) => {
+  // Upload file to API
+  const uploadFile = async (file: File) => {
     setUploadState(prev => ({ 
       ...prev, 
-      isUploading: true, 
-      uploadProgress: 0,
+      isUploading: true,
       error: null 
     }));
 
-    // Simulate upload progress
-    for (let progress = 0; progress <= 100; progress += 10) {
-      await new Promise(resolve => setTimeout(resolve, 200));
-      setUploadState(prev => ({ ...prev, uploadProgress: progress }));
-    }
+    try {
+      const response = await papyrusApi.uploadPDF(file);
 
-    // Complete upload
-    setUploadState(prev => ({ 
-      ...prev, 
-      isUploading: false, 
-      uploadedFile: file 
-    }));
+      if (response.success) {
+        setUploadState(prev => ({ 
+          ...prev, 
+          isUploading: false,
+          isSuccess: true,
+          uploadedFileName: file.name
+        }));
+      } else {
+        setUploadState(prev => ({ 
+          ...prev, 
+          isUploading: false,
+          error: response.error || 'Upload failed'
+        }));
+      }
+    } catch (error) {
+      console.error('Upload error:', error);
+      setUploadState(prev => ({ 
+        ...prev, 
+        isUploading: false,
+        error: error instanceof Error ? error.message : 'Upload failed. Please try again.'
+      }));
+    }
   };
 
   // Handle file selection
@@ -98,8 +109,8 @@ const Upload: React.FC = () => {
     setUploadState({
       isDragging: false,
       isUploading: false,
-      uploadProgress: 0,
-      uploadedFile: null,
+      isSuccess: false,
+      uploadedFileName: null,
       error: null,
     });
   };
@@ -107,17 +118,19 @@ const Upload: React.FC = () => {
   return (
     <div className="min-h-screen w-full bg-gradient-to-br from-amber-50 via-orange-50 to-rose-50">
       {/* Navigation */}
-       <Navbar rightContent ={
-        <div className="flex items-center gap-3">
+    <Navbar
+        rightContent={
+          <div className="flex items-center gap-3">
             <Button variant="primary" size="sm" to="/">
-                Home
+              Home
             </Button>
-            <Button variant="primary" size="sm" to="/login">
+            <Button variant="primary" size="sm" to="/dashboard">
               Login
             </Button>
-        </div>
-       }/>
-
+          </div>
+        }
+      />
+      
       {/* Main Upload Area */}
       <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 pt-12">
         <div className="text-center mb-12">
@@ -131,17 +144,17 @@ const Upload: React.FC = () => {
 
         {/* Upload Area */}
         <div className="mb-8">
-          {uploadState.uploadedFile ? (
+          {uploadState.isSuccess ? (
             // Success State
             <div className="bg-white/40 backdrop-blur-sm border-2 border-green-300 border-dashed rounded-2xl p-12 text-center">
               <div className="text-6xl mb-4">✅</div>
               <h3 className="text-2xl font-semibold text-green-800 mb-2">Upload Successful!</h3>
               <p className="text-green-700 mb-4">
-                <span className="font-medium">{uploadState.uploadedFile.name}</span> is ready to read
+                <span className="font-medium">{uploadState.uploadedFileName}</span> has been uploaded successfully
               </p>
               <div className="flex gap-4 justify-center">
-                <Button variant="primary" size="lg">
-                  Start Reading
+                <Button variant="primary" size="lg" to="/library">
+                  View Library
                 </Button>
                 <Button variant="secondary" size="lg" onClick={resetUpload}>
                   Upload Another
@@ -151,15 +164,12 @@ const Upload: React.FC = () => {
           ) : uploadState.isUploading ? (
             // Loading State
             <div className="bg-white/40 backdrop-blur-sm border-2 border-amber-300 border-dashed rounded-2xl p-12 text-center">
-              <div className="text-6xl mb-4">📤</div>
+              <div className="text-6xl mb-4 animate-bounce">📤</div>
               <h3 className="text-2xl font-semibold text-amber-900 mb-4">Uploading...</h3>
-              <div className="w-full max-w-md mx-auto bg-amber-200 rounded-full h-3 mb-4">
-                <div 
-                  className="bg-gradient-to-r from-amber-500 to-orange-500 h-3 rounded-full transition-all duration-300"
-                  style={{ width: `${uploadState.uploadProgress}%` }}
-                ></div>
+              <div className="flex justify-center">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-amber-600"></div>
               </div>
-              <p className="text-amber-700">{uploadState.uploadProgress}% complete</p>
+              <p className="text-amber-700 mt-4">Please wait while we process your PDF</p>
             </div>
           ) : (
             // Upload State
