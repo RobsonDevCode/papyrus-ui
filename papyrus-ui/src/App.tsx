@@ -10,7 +10,7 @@ function App() {
       <Routes>
         <Route path="/" element ={<Home/>} />
         <Route path="/upload" element={<Upload/>} />
-        <Route path="/reader" element={<Reader/>} />
+        <Route path="/reader/:documentGroupId" element={<Reader/>} />
       </Routes>
     </Router>
   )

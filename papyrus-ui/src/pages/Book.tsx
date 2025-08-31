@@ -1,106 +1,115 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, use } from 'react';
 import Button from '../components/common/Button';
+import ZoomModal from '../components/zoom/ZoomModal';
+import {pagesApi, type FetchPagesRequest, type PageResponse} from '../services/PagesApi';
+import { useParams } from 'react-router-dom';
+import { type PageModel } from '../services/models/Page';
 
-interface PageData {
-  documentGroupId: string;
-  documentName: string;
-  author: string;
-  content: string;
-  pageNumber: number;
-  documentType: string;
-  createdAt: string;
-  updatedAt: string;
-}
 
 interface ReaderState {
-  currentPage: number;
   totalPages: number | null;
+  leftPageNumber: number;
+  rightPageNumber: number;
   leftPageContent: string;
   rightPageContent: string;
+  leftPageImageUrl: string | null;
+  rightPageImageUrl: string | null;
+  leftPageHasImage: boolean;
+  rightPageHasImage: boolean;
   documentName: string;
-  author: string;
+  author?: string;
   isLoading: boolean;
   error: string | null;
   fontSize: number;
+  zoomedImage: string | null; // For fullscreen zoom
 }
 
+
+
 const BookReader: React.FC = () => {
-  const documentGroupId = "123e4567-e89b-12d3-a456-426614174000";
-  
+  const { documentGroupId } = useParams<{documentGroupId: string}>();
+  const [pageZoomNumber, setPageToZoom] = useState<number>(0);
+
   const [readerState, setReaderState] = useState<ReaderState>({
-    currentPage: 1,
+    leftPageNumber: 0,
+    rightPageNumber: 0,
     totalPages: null,
     leftPageContent: '',
     rightPageContent: '',
+    leftPageImageUrl: null,
+    rightPageImageUrl: null,
+    leftPageHasImage: false,
+    rightPageHasImage: false,
     documentName: 'Loading...',
     author: '',
     isLoading: true,
     error: null,
-    fontSize: 16,
+    fontSize: 14,
+    zoomedImage: null,
   });
 
-  // English story content
-  const getEnglishPageContent = (pageNumber: number): string => {
-    const englishPages = [
-      "Chapter One: The London Train\n\nThe morning fog lifted slowly from the Thames as Elizabeth hurried through the cobblestone streets of Victorian London. Her leather boots clicked against the wet stones, echoing off the narrow alleyways that led to Paddington Station.\n\nShe clutched the telegram tightly in her gloved hand - news from her sister Margaret in Yorkshire had arrived unexpectedly. Their grandmother's estate needed immediate attention, and Elizabeth was the only family member available to travel north.\n\nThe great steam engine whistled loudly as she approached Platform 9, sending clouds of white vapor into the crisp November air.",
+  const fetchPages = async (pageNumbers: number[], documentGroupId: string): Promise<PageResponse> => {
+    try{
+      const request: FetchPagesRequest = {
+        documentGroupId: documentGroupId,
+        pages: pageNumbers
+      };
+
+      const response = await pagesApi.getPages(request);
       
-      "Elizabeth found her compartment and settled by the window, watching London's sprawling cityscape gradually give way to rolling green countryside. The rhythmic clacking of the train wheels on the tracks was oddly comforting.\n\nA gentleman in a dark coat and top hat sat across from her, reading The Times newspaper. She noticed the headlines spoke of industrial progress and social reform - topics that had become increasingly important in Queen Victoria's England.\n\nAs the train pulled into a small station, Elizabeth thought about her childhood visits to Grandmother's house. The old manor held so many memories of summer afternoons and winter evenings.",
-      
-      "Chapter Two: Yorkshire Manor\n\nThe carriage ride from the station took Elizabeth through the Yorkshire Dales, where sheep grazed peacefully on the hillsides and dry stone walls divided the landscape into neat parcels. The driver, a friendly man named Thomas, pointed out landmarks along the way.\n\n'That's Thornfield Manor up ahead, miss,' he said, gesturing toward a grand stone building nestled among ancient oak trees. 'Your grandmother was well-loved in these parts. Always had a kind word and helping hand for anyone in need.'\n\nElizabeth felt a mixture of sadness and anticipation as they approached the impressive Georgian facade.",
-      
-      "Margaret was waiting at the front door, her face showing the strain of recent weeks. The sisters embraced warmly, sharing their grief and the overwhelming task that lay ahead.\n\n'I've been through most of Grandmother's papers,' Margaret explained as they walked through the grand entrance hall. 'There are so many documents to sort - deeds, letters, photographs dating back decades.'\n\nThe house felt different without their grandmother's presence. Dust motes danced in the afternoon sunlight streaming through the tall windows, and the familiar scent of lavender and old books filled the air.\n\n'We'll need to decide what to do with the estate,' Margaret continued.",
-      
-      "Chapter Three: Hidden Discoveries\n\nWhile sorting through their grandmother's belongings in the library, Elizabeth discovered a hidden compartment in the old writing desk. Inside was a collection of letters tied with a faded blue ribbon and a small leather journal.\n\nThe letters were addressed to their grandmother from someone named William, written in elegant script and dated from the 1840s. As Elizabeth read them by the flickering candlelight, she realized they were love letters from a man she had never heard mentioned in family conversations.\n\nThe journal contained her grandmother's own thoughts and reflections from her youth - dreams of travel and observations about Victorian society.",
-      
-      "Margaret joined her sister by the fireplace as Elizabeth shared her discoveries. Together, they read through the correspondence and journal entries, piecing together a story of their grandmother's secret romance with William, a young architect who had designed several buildings in the nearby village.\n\n'Look at this,' Margaret whispered, pointing to a passage in the journal. 'She writes about having to choose between following her heart and fulfilling family obligations. She chose duty over love.'\n\nElizabeth felt a deep connection to her grandmother's words. The struggles between personal desires and societal expectations seemed timeless, relevant even in their modern world."
-    ];
-    
-    return englishPages[pageNumber - 1] || "The End\n\nThank you for reading this story of family, duty, and hidden histories. Elizabeth and Margaret learned that understanding the past can illuminate the path forward, and that every family has stories waiting to be discovered.";
+      return response;
+    }catch(error){
+      throw new Error("failed to get pages");
+       //TODO add an error screen and some retry logic
+    }
   };
 
-  // Mock API call
-  const fetchPage = async (pageNumber: number): Promise<PageData> => {
-    await new Promise(resolve => setTimeout(resolve, 300));
-    
-    return {
-      documentGroupId,
-      documentName: "The Yorkshire Inheritance",
-      author: "Catherine Elizabeth Thornton",
-      content: getEnglishPageContent(pageNumber),
-      pageNumber,
-      documentType: "PDF",
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    };
-  };
+ 
+  const loadPages = async (pageNumbers: number[], documentGroupId?: string) => {
+    if(documentGroupId === undefined || documentGroupId === null)
+    {
+      console.error("group id is null");
+    }
 
-  const getTotalPages = async (): Promise<number> => {
-    return 6;
-  };
-
-  const loadPages = async (leftPageNumber: number) => {
     setReaderState(prev => ({ ...prev, isLoading: true, error: null }));
-    
-    try {
-      const leftPagePromise = fetchPage(leftPageNumber);
-      const rightPageNumber = leftPageNumber + 1;
-      const rightPagePromise = rightPageNumber <= (readerState.totalPages || 0) 
-        ? fetchPage(rightPageNumber) 
-        : null;
 
-      const [leftPageData, rightPageData] = await Promise.all([
-        leftPagePromise,
-        rightPagePromise
-      ]);
+    try {
       
+      const pageResponse = await fetchPages(pageNumbers, documentGroupId!);
+      if(pageResponse.pages.length > 2){
+        console.error("error more than 2 pages were returned");
+        //TODO add error page 
+      } 
+      const sortedPages = pageResponse.pages.sort((a, b) => a.pageNumber - b.pageNumber)
+      
+    if(pageResponse.pages.length == 1){
+        const placeHolderPage: PageModel = {
+          documentGroupId: documentGroupId!,
+          documentName: "",
+          author: "",
+          content: "",
+          pageNumber: sortedPages[0].pageNumber + 1,
+          documentType: "",
+          imageCount: 0
+        }
+
+        pageResponse.pages.push(placeHolderPage);
+      }
+
       setReaderState(prev => ({
         ...prev,
-        currentPage: leftPageNumber,
-        leftPageContent: leftPageData.content,
-        rightPageContent: rightPageData?.content || '',
-        documentName: leftPageData.documentName,
-        author: leftPageData.author,
+        leftPageNumber: sortedPages[0].pageNumber,
+        rightPageNumber: sortedPages[1].pageNumber,
+        leftPageContent: sortedPages[0].content || '',
+        rightPageContent: sortedPages[1]?.content || '',
+        leftPageImageUrl: sortedPages[0].imageUrl || null,
+        rightPageImageUrl: sortedPages[1]?.imageUrl || null,
+        leftPageHasImage: sortedPages[0]?.imageUrl == null ? false : true,
+        rightPageHasImage:  sortedPages[1]?.imageUrl == null ? false : true,
+        documentName: sortedPages[0].documentName,
+        author:  sortedPages[1].author,
         isLoading: false,
+        totalPages: pageResponse.totalPages
       }));
     } catch (error) {
       setReaderState(prev => ({
@@ -112,23 +121,23 @@ const BookReader: React.FC = () => {
   };
 
   const goToNextSpread = () => {
-    const nextPage = readerState.currentPage + 2;
+    const nextPage = readerState.leftPageNumber + 2;
     if (readerState.totalPages && nextPage <= readerState.totalPages) {
-      loadPages(nextPage);
+      loadPages([readerState.leftPageNumber + 2, readerState.rightPageNumber + 2], documentGroupId);
     }
   };
 
   const goToPreviousSpread = () => {
-    const prevPage = readerState.currentPage - 2;
+    const prevPage = readerState.leftPageNumber - 2;
     if (prevPage >= 1) {
-      loadPages(prevPage);
+      loadPages([readerState.leftPageNumber - 2, readerState.rightPageNumber - 2], documentGroupId);
     }
   };
 
   const goToPage = (pageNumber: number) => {
     const leftPageNumber = pageNumber % 2 === 0 ? pageNumber - 1 : pageNumber;
     if (readerState.totalPages && leftPageNumber >= 1 && leftPageNumber <= readerState.totalPages) {
-      loadPages(leftPageNumber);
+      //loadPages(leftPageNumber);
     }
   };
 
@@ -146,12 +155,20 @@ const BookReader: React.FC = () => {
     }));
   };
 
+  const openImageZoom = (imageUrl: string, pageNumber: number) => {
+    setPageToZoom(pageNumber)
+    setReaderState(prev => ({ ...prev, zoomedImage: imageUrl }));
+  };
+
+  const closeImageZoom = () => {
+    setReaderState(prev => ({ ...prev, zoomedImage: null }));
+  };
+
   useEffect(() => {
     const initializeReader = async () => {
       try {
-        const totalPages = await getTotalPages();
-        setReaderState(prev => ({ ...prev, totalPages }));
-        await loadPages(1);
+     
+        await loadPages([1, 2], documentGroupId);
       } catch (error) {
         setReaderState(prev => ({
           ...prev,
@@ -166,6 +183,15 @@ const BookReader: React.FC = () => {
 
   useEffect(() => {
     const handleKeyPress = (event: KeyboardEvent) => {
+      // Close zoom if open
+      if (readerState.zoomedImage && event.key === 'Escape') {
+        closeImageZoom();
+        return;
+      }
+
+      // Don't navigate if zoom is open
+      if (readerState.zoomedImage) return;
+
       switch (event.key) {
         case 'ArrowLeft':
           event.preventDefault();
@@ -175,20 +201,28 @@ const BookReader: React.FC = () => {
           event.preventDefault();
           goToNextSpread();
           break;
+        case 'Escape':
+          // Navigate back to library - implement based on your routing
+          break;
       }
     };
 
     window.addEventListener('keydown', handleKeyPress);
     return () => window.removeEventListener('keydown', handleKeyPress);
-  }, [readerState.currentPage, readerState.totalPages]);
+  }, [readerState.leftPageNumber, readerState.totalPages, readerState.zoomedImage]);
 
-  const rightPageNumber = readerState.currentPage + 1;
+  const rightPageNumber = readerState.leftPageNumber + 1;
   const hasRightPage = readerState.totalPages && rightPageNumber <= readerState.totalPages;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-amber-100 via-orange-100 to-rose-100">
-      {/* Header */}
-      <header className="bg-amber-900/20 backdrop-blur-sm border-b border-amber-300/50 sticky top-0 z-10">
+    <div className="min-h-screen bg-gradient-to-br from-amber-100 via-orange-100 to-rose-100 relative overflow-hidden">
+      {/* Ambient background elements */}
+      <div className="absolute inset-0 opacity-20">
+        <div className="absolute top-20 left-20 w-96 h-96 bg-amber-300/30 rounded-full blur-3xl"></div>
+        <div className="absolute bottom-20 right-20 w-96 h-96 bg-orange-300/30 rounded-full blur-3xl"></div>
+      </div>
+
+      <header className="relative bg-white/10 backdrop-blur-xl border-b border-white/20 sticky top-0 z-20 shadow-lg">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             <div className="flex items-center space-x-4">
@@ -200,34 +234,41 @@ const BookReader: React.FC = () => {
                   {readerState.documentName}
                 </h1>
                 {readerState.author && (
-                  <p className="text-sm text-amber-700">by {readerState.author}</p>
+                  <p className="text-sm text-amber-700/80">by {readerState.author}</p>
                 )}
               </div>
             </div>
 
-            <div className="flex items-center space-x-2">
-              <button
-                onClick={decreaseFontSize}
-                className="p-2 rounded-lg bg-amber-200/50 hover:bg-amber-200/70 text-amber-900 transition-all"
-                title="Decrease Font Size"
-              >
-                A-
-              </button>
-              <span className="text-sm text-amber-800 px-2">
-                {readerState.fontSize}px
-              </span>
-              <button
-                onClick={increaseFontSize}
-                className="p-2 rounded-lg bg-amber-200/50 hover:bg-amber-200/70 text-amber-900 transition-all"
-                title="Increase Font Size"
-              >
-                A+
-              </button>
+            <div className="flex items-center space-x-3">
+              {/* Font Size Controls */}
+              {(!readerState.leftPageHasImage || !readerState.rightPageHasImage) && (
+                <div className="flex items-center space-x-2 bg-white/20 backdrop-blur-sm rounded-xl px-3 py-2 border border-white/30">
+                  <button
+                    onClick={decreaseFontSize}
+                    className="p-2 rounded-lg bg-white/20 hover:bg-white/30 text-amber-900 transition-all duration-200"
+                    title="Decrease Font Size"
+                  >
+                    A-
+                  </button>
+                  <span className="text-sm text-amber-800 px-2 font-medium">
+                    {readerState.fontSize}px
+                  </span>
+                  <button
+                    onClick={increaseFontSize}
+                    className="p-2 rounded-lg bg-white/20 hover:bg-white/30 text-amber-900 transition-all duration-200"
+                    title="Increase Font Size"
+                  >
+                    A+
+                  </button>
+                </div>
+              )}
 
               {readerState.totalPages && (
-                <div className="ml-4 text-sm text-amber-700">
-                  Pages {readerState.currentPage}
-                  {hasRightPage && `-${rightPageNumber}`} of {readerState.totalPages}
+                <div className="bg-white/20 backdrop-blur-sm rounded-xl px-4 py-2 border border-white/30">
+                  <span className="text-sm text-amber-800 font-medium">
+                    Pages {readerState.leftPageNumber}
+                    {hasRightPage && `-${rightPageNumber}`} of {readerState.totalPages}
+                  </span>
                 </div>
               )}
             </div>
@@ -236,8 +277,8 @@ const BookReader: React.FC = () => {
       </header>
 
       {/* Main Reader */}
-      <main className="flex-1 p-6">
-        <div className="max-w-6xl mx-auto">
+      <main className="relative flex-1 p-6">
+        <div className="max-w-7xl mx-auto">
           {readerState.error ? (
             <div className="text-center py-12">
               <div className="text-6xl mb-4">❌</div>
@@ -246,7 +287,7 @@ const BookReader: React.FC = () => {
               <Button variant="primary" to="/library">Back to Library</Button>
             </div>
           ) : (
-            <div className="bg-amber-50/80 backdrop-blur-sm rounded-2xl shadow-2xl border border-amber-300/50 overflow-hidden">
+            <div className="bg-white/10 backdrop-blur-xl rounded-3xl shadow-2xl border border-white/20 overflow-hidden">
               {readerState.isLoading ? (
                 <div className="text-center py-16">
                   <div className="text-6xl mb-4 animate-bounce">📖</div>
@@ -257,97 +298,182 @@ const BookReader: React.FC = () => {
                 </div>
               ) : (
                 <>
-                  {/* Two-Page Layout */}
-                  <div className="flex min-h-[700px]">
-                    {/* Left Page */}
-                    <div className="flex-1 bg-orange-50/90 p-8 border-r border-amber-200/50">
-                      <div className="h-full flex flex-col">
-                        <div className="text-center mb-4 text-amber-700 text-sm font-medium">
-                          Page {readerState.currentPage}
-                        </div>
-                        <div 
-                          className="flex-1 leading-relaxed text-amber-900"
-                          style={{ fontSize: `${readerState.fontSize}px` }}
-                        >
-                          {readerState.leftPageContent.split('\n').map((paragraph, index) => (
-                            <p key={index} className="mb-4 text-justify">
-                              {paragraph}
-                            </p>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Right Page */}
-                    <div className="flex-1 bg-orange-50/90 p-8">
-                      <div className="h-full flex flex-col">
-                        {hasRightPage ? (
-                          <>
-                            <div className="text-center mb-4 text-amber-700 text-sm font-medium">
-                              Page {rightPageNumber}
+                  {/* Two-Page Layout with Floating Pages */}
+                  <div className="flex min-h-[700px] p-8 gap-6">
+                    {/* Left Floating Page */}
+                    <div className="flex-1">
+                      <div className="bg-white/80 backdrop-blur-lg border border-white/30 rounded-2xl shadow-xl p-8 h-full hover:shadow-2xl hover:-translate-y-1 transition-all duration-300">
+                        <div className="h-full flex flex-col">
+                          <div className="text-center mb-4 text-amber-700 text-sm font-medium tracking-wide">
+                            Page {readerState.leftPageNumber}
+                          </div>
+                          
+                          {readerState.leftPageHasImage ? (
+                            // Show image for this page
+                            <div className="flex-1 flex items-center justify-center p-2">
+                              <div className="relative group cursor-pointer transform transition-transform duration-300 hover:scale-105">
+                                <img 
+                                  src={readerState.leftPageImageUrl || ''} 
+                                  alt={`Page ${readerState.leftPageNumber}`}
+                                  className="max-w-full max-h-full object-contain shadow-2xl rounded-lg border border-white/20"
+                                  onClick={() => openImageZoom(readerState.leftPageImageUrl || '', readerState.leftPageNumber)}
+                                  onError={(e) => {
+                                    const target = e.target as HTMLImageElement;
+                                    target.style.display = 'none';
+                                    target.parentElement!.innerHTML = `
+                                      <div class="text-center text-amber-600 p-8 bg-white/10 rounded-lg border border-white/20">
+                                        <div class="text-4xl mb-2">🖼️</div>
+                                        <p class="font-medium">Image not available</p>
+                                        <p class="text-sm">Page ${readerState.leftPageNumber}</p>
+                                      </div>
+                                    `;
+                                  }}
+                                />
+                                <div 
+                                  className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-300 rounded-lg flex items-center justify-center opacity-0 group-hover:opacity-100"
+                                  style={{ pointerEvents: 'none' }}
+                                >
+                                  <div className="bg-white/90 backdrop-blur-sm px-3 py-1 rounded-full text-sm text-amber-900 font-medium">
+                                    🔍 Click to zoom
+                                  </div>
+                                </div>
+                              </div>
                             </div>
+                          ) : (
+                            // Show text content
                             <div 
                               className="flex-1 leading-relaxed text-amber-900"
                               style={{ fontSize: `${readerState.fontSize}px` }}
                             >
-                              {readerState.rightPageContent.split('\n').map((paragraph, index) => (
+                              {readerState.leftPageContent.split('\n').map((paragraph, index) => (
                                 <p key={index} className="mb-4 text-justify">
                                   {paragraph}
                                 </p>
                               ))}
                             </div>
-                          </>
-                        ) : (
-                          <div className="flex-1 flex items-center justify-center text-amber-500">
-                            <div className="text-center">
-                              <div className="text-4xl mb-2">📖</div>
-                              <p>End of book</p>
-                            </div>
-                          </div>
-                        )}
+                          )}
+                        </div>
                       </div>
+                    </div>
+
+                    {/* Right Floating Page */}
+                    <div className="flex-1">
+                      {hasRightPage ? (
+                        <div className="bg-white/80 backdrop-blur-lg border border-white/30 rounded-2xl shadow-xl p-8 h-full hover:shadow-2xl hover:-translate-y-1 transition-all duration-300">
+                          <div className="h-full flex flex-col">
+                            <div className="text-center mb-4 text-amber-700 text-sm font-medium tracking-wide">
+                              Page {rightPageNumber}
+                            </div>
+                            
+                            {readerState.rightPageHasImage ? (
+                              // Show image for this page
+                              <div className="flex-1 flex items-center justify-center p-2">
+                                <div className="relative group cursor-pointer transform transition-transform duration-300 hover:scale-105">
+                                  <img 
+                                    src={readerState.rightPageImageUrl || ''} 
+                                    alt={`Page ${rightPageNumber}`}
+                                    className="max-w-full max-h-full object-contain shadow-2xl rounded-lg border border-white/20"
+                                    onClick={() => openImageZoom(readerState.rightPageImageUrl || '', rightPageNumber)}
+                                    onError={(e) => {
+                                      const target = e.target as HTMLImageElement;
+                                      target.style.display = 'none';
+                                      target.parentElement!.innerHTML = `
+                                        <div class="text-center text-amber-600 p-8 bg-white/10 rounded-lg border border-white/20">
+                                          <div class="text-4xl mb-2">🖼️</div>
+                                          <p class="font-medium">Image not available</p>
+                                          <p class="text-sm">Page ${rightPageNumber}</p>
+                                        </div>
+                                      `;
+                                    }}
+                                  />
+                                  <div 
+                                    className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-300 rounded-lg flex items-center justify-center opacity-0 group-hover:opacity-100"
+                                    style={{ pointerEvents: 'none' }}
+                                  >
+                                    <div className="bg-white/90 backdrop-blur-sm px-3 py-1 rounded-full text-sm text-amber-900 font-medium">
+                                      🔍 Click to zoom
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            ) : (
+                              // Show text content
+                              <div 
+                                className="flex-1 leading-relaxed text-amber-900"
+                                style={{ fontSize: `${readerState.fontSize}px` }}
+                              >
+                                {readerState.rightPageContent.split('\n').map((paragraph, index) => (
+                                  <p key={index} className="mb-4 text-justify">
+                                    {paragraph}
+                                  </p>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="bg-white/5 backdrop-blur-lg border border-white/10 rounded-2xl shadow-xl p-8 h-full flex items-center justify-center">
+                          <div className="text-center text-amber-500">
+                            <div className="text-4xl mb-2">📖</div>
+                            <p>End of book</p>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
 
-                  {/* Navigation Controls */}
-                  <div className="bg-amber-100/70 px-8 py-6 border-t border-amber-200/50">
+                  {/* Enhanced Navigation Controls */}
+                  <div className="bg-white/10 backdrop-blur-lg px-8 py-6 border-t border-white/20">
                     <div className="flex items-center justify-between">
                       <Button
                         variant="secondary"
                         size="lg"
                         onClick={goToPreviousSpread}
-                        disabled={readerState.currentPage <= 1}
-                        className={readerState.currentPage <= 1 ? 'opacity-50 cursor-not-allowed' : ''}
+                        disabled={readerState.leftPageNumber <= 1}
+                        className={`${readerState.leftPageNumber <= 1 ? 'opacity-50 cursor-not-allowed' : 'hover:bg-white/20'} bg-white/10 backdrop-blur-sm border-white/30 transition-all duration-200`}
                       >
                         ← Previous
                       </Button>
 
-                      <div className="flex items-center space-x-4">
-                        <span className="text-amber-800">Go to page:</span>
-                        <input
-                          type="number"
-                          min={1}
-                          max={readerState.totalPages || 1}
-                          value={readerState.currentPage}
-                          onChange={(e) => goToPage(parseInt(e.target.value) || 1)}
-                          className="w-20 px-3 py-2 rounded-lg border border-amber-300 bg-white/80 text-center focus:ring-2 focus:ring-amber-400 focus:border-transparent"
-                        />
-                        <span className="text-amber-700">of {readerState.totalPages}</span>
+                      {/* Enhanced Dropdown Navigation */}
+                      <div className="flex items-center space-x-4 bg-white/20 backdrop-blur-lg px-6 py-3 rounded-2xl border border-white/30 shadow-lg">
+                        <span className="text-amber-800 font-medium">Go to page:</span>
+                        <div className="relative">
+                          <select
+                            value={readerState.leftPageNumber}
+                            onChange={(e) => goToPage(parseInt(e.target.value))}
+                            className="appearance-none bg-white/30 backdrop-blur-sm border border-white/40 rounded-xl px-4 py-2 pr-10 text-amber-900 font-medium focus:ring-2 focus:ring-amber-400/50 focus:border-white/60 transition-all cursor-pointer hover:bg-white/40"
+                          >
+                            {Array.from({ length: readerState.totalPages || 0 }, (_, i) => i + 1).map(page => (
+                              <option key={page} value={page} className="bg-amber-50 text-amber-900">
+                                Page {page}
+                              </option>
+                            ))}
+                          </select>
+                          <div className="absolute right-3 top-1/2 transform -translate-y-1/2 pointer-events-none">
+                            <svg className="w-4 h-4 text-amber-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                            </svg>
+                          </div>
+                        </div>
+                        <span className="text-amber-700 font-medium">of {readerState.totalPages}</span>
                       </div>
 
                       <Button
                         variant="secondary"
                         size="lg"
                         onClick={goToNextSpread}
-                        disabled={!readerState.totalPages || readerState.currentPage + 1 >= readerState.totalPages}
-                        className={!readerState.totalPages || readerState.currentPage + 1 >= readerState.totalPages ? 'opacity-50 cursor-not-allowed' : ''}
+                        disabled={!readerState.totalPages || readerState.leftPageNumber + 1 >= readerState.totalPages}
+                        className={`${!readerState.totalPages || readerState.leftPageNumber + 1 >= readerState.totalPages ? 'opacity-50 cursor-not-allowed' : 'hover:bg-white/20'} bg-white/10 backdrop-blur-sm border-white/30 transition-all duration-200`}
                       >
                         Next →
                       </Button>
                     </div>
 
-                    <div className="mt-4 text-center text-sm text-amber-700">
-                      <p>💡 Use arrow keys to navigate • Press Escape to return to library</p>
+                    <div className="mt-4 text-center">
+                      <p className="text-sm text-amber-700 font-medium bg-white/20 backdrop-blur-sm px-4 py-2 rounded-xl inline-block border border-white/30">
+                        💡 Use arrow keys to navigate • Click images to zoom • Hover for preview
+                      </p>
                     </div>
                   </div>
                 </>
@@ -356,6 +482,13 @@ const BookReader: React.FC = () => {
           )}
         </div>
       </main>
+
+      {/* Fullscreen Image Zoom Modal */}
+      {readerState.zoomedImage && pageZoomNumber > 0 && (
+        <ZoomModal imageUrl={readerState.zoomedImage}
+         onClose={closeImageZoom}
+         pageNumber={pageZoomNumber}/>
+      )}
     </div>
   );
 };

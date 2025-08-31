@@ -7,10 +7,9 @@ export interface UploadResponse {
   error?: string;
 }
 
-class ApiService {
+class DocumentUploadService {
   private axiosInstance;
   constructor(config: ApiConfig) {
-    console.log(`base url ${config.baseUrl}`);
     this.axiosInstance = axios.create({
       baseURL: config.baseUrl,
       timeout: config.timeout || 30000,
@@ -48,9 +47,9 @@ class ApiService {
   }
 }
 
-export const papyrusApi = new ApiService({
-    baseUrl: "https://localhost:7281/",
+export const papyrusApi = new DocumentUploadService({
+    baseUrl: import.meta.env.VITE_PAPYRUS_BASE_URL,
     timeout: 30000
 });
 
-export default ApiService;
+export default DocumentUploadService;

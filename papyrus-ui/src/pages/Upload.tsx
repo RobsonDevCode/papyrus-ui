@@ -1,6 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import Button from '../components/common/Button';
-import { papyrusApi } from '../services/PapyrusAiApi';
+import { papyrusApi } from '../services/DocumentUploadService';
 import Navbar from '../components/common/Navigation';
 
 interface UploadState {
