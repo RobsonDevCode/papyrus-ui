@@ -1,11 +1,8 @@
 import axios from "axios";
 import type { ApiConfig } from "./models/ApiConfig";
+import type { Response } from "./models/Response";
 
-export interface UploadResponse {
-  success: boolean;
-  message?: string;
-  error?: string;
-}
+
 
 class DocumentUploadService {
   private axiosInstance;
@@ -19,7 +16,7 @@ class DocumentUploadService {
     });
   }
 
-  async uploadPDF(file: File): Promise<UploadResponse> {
+  async uploadPDF(file: File): Promise<Response> {
     const formData = new FormData();
     formData.append("pdfFile", file);
     try {
@@ -35,7 +32,7 @@ class DocumentUploadService {
         );
       }
 
-      const result: UploadResponse = {
+      const result: Response = {
         success: true,
         message: "Document Uploaded",
       };

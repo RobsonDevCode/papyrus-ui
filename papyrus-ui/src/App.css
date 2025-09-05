@@ -1,0 +1,13 @@
+.pdf-text-layer ::selection {
+  background: rgba(59, 130, 246, 0.3) !important;
+  color: rgba(254, 254, 255, 0.1) !important;
+  text-shadow: none !important;
+
+}
+
+
+.pdf-text-layer ::-moz-selection {
+  background: rgba(59, 130, 246, 0.3) !important;
+  color: rgba(30, 58, 138, 0.9) !important;
+  text-shadow: none !important;
+}

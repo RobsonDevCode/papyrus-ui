@@ -16,6 +16,7 @@ const Home: React.FC = () => {
             <Button variant="primary" size="sm" to="/dashboard">
               Get Started
             </Button>
+            <Button variant="primary" size="sm" to="/library">Library</Button>
           </div>
         }
       />
