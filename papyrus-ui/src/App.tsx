@@ -3,6 +3,7 @@ import Home from './pages/Home';
 import './App.css'
 import Upload from './pages/Upload';
 import Reader from './pages/Book';
+import Library from './pages/Library';
 
 function App() {
   return (
@@ -11,6 +12,7 @@ function App() {
         <Route path="/" element ={<Home/>} />
         <Route path="/upload" element={<Upload/>} />
         <Route path="/reader/:documentGroupId" element={<Reader/>} />
+        <Route path="/library" element={<Library/>}/>
       </Routes>
     </Router>
   )

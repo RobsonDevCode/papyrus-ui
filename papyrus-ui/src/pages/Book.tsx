@@ -3,11 +3,9 @@ import Button from "../components/common/Button";
 import ZoomModal from "../components/zoom/ZoomModal";
 import {
   pagesApi,
-  type FetchPageRequest,
   type FetchPagesRequest,
 } from "../services/PageService";
 import { useParams } from "react-router-dom";
-import type { PageModel } from "../services/models/Page";
 import type { Bookmark } from "../services/models/Bookmark";
 import { bookmarkApi } from "../services/BookmarkService";
 
@@ -105,7 +103,6 @@ const BookReader: React.FC = () => {
     scale: 1.0,
   });
 
-  // Load PDF.js when component mounts
   useEffect(() => {
     const script = document.createElement("script");
     script.src =
@@ -150,8 +147,8 @@ const BookReader: React.FC = () => {
             createdAt:new Date(Date.now()),
             id: "temp"
         };
-        return response;
 
+        return response;
       }
       return bookmark;
     } catch (error) {

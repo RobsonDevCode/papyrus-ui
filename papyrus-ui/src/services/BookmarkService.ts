@@ -37,12 +37,13 @@ class BookMarkApiService{
 
     async getBookmark(documentGroupId: string): Promise<Bookmark | undefined>{
         try{
-            console.log("getting here ")
             const response = await this.axiosInstance.get<Bookmark>(`bookmark/${documentGroupId}`, {
-               headers: { 'Accept': 'application/json' }
+               headers: { 'Accept': 'application/json' },
+               validateStatus: (status) => status < 500
             })
 
-            if(response.status == 404){
+            console.log(response);
+            if(response.status === 404){
                 console.log("book mark returned not found");
                 return undefined;
             }
