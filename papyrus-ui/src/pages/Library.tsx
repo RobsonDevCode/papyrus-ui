@@ -5,10 +5,12 @@ import type { BookDocument } from "../services/models/BookDocument";
 import type { PagedResponse } from "../services/models/PagedResponse";
 import { documentApi } from "../services/DocumentRetrievalService";
 import Pagination from "../components/common/Pagination";
+import { useNavigate } from "react-router-dom";
 
 
 const Library: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState("");
+  const navigate = useNavigate();
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [sortBy, setSortBy] = useState("recent");
   const [currentPage, setCurrentPage] = useState(1);
@@ -136,7 +138,7 @@ const fetchFilteredBooks = async (e: React.ChangeEvent<HTMLInputElement>) => {
 
         {/* Actions */}
         <div className="flex gap-2 pt-2">
-          <Button variant="primary" size="sm" className="flex-1">
+          <Button variant="primary" size="sm" className="flex-1" to="/reader" params={{id: book.documentGroupId}} state={{name: book.name, author: book.author}}>
             Read
           </Button>
           <button className="px-3 py-2 text-amber-700 hover:bg-amber-100 rounded-lg transition-colors">

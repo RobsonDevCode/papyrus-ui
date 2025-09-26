@@ -6,7 +6,7 @@ const Pagination: React.FC<{
   onPageChange: (page: number) => void;
   loading?: boolean;
 }> = ({ pagination, onPageChange, loading = false }) => {
-  const { page: currentPage, size: pageSize, total } = pagination;
+  const { page: currentPage, size: pageSize, total: total } = pagination;
   const totalPages = Math.ceil(total / pageSize);
   const hasNextPage = currentPage < totalPages;
   const hasPreviousPage = currentPage > 1;

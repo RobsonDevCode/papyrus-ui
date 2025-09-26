@@ -5,9 +5,10 @@ import {
   pagesApi,
   type FetchPagesRequest,
 } from "../services/PageService";
-import { useParams } from "react-router-dom";
+import { useLocation, useParams } from "react-router-dom";
 import type { Bookmark } from "../services/models/Bookmark";
 import { bookmarkApi } from "../services/BookmarkService";
+import AIReadingModal, { type AIReadingRequest } from "../components/modals/AiReadingModal";
 
 interface ReaderState {
   totalPages: number | null;
@@ -88,7 +89,7 @@ const BookReader: React.FC = () => {
   const rightTextLayerRef = useRef<HTMLDivElement>(null);
   const [pdfDoc, setPdfDoc] = useState<PDFDocument | null>(null);
   const [textElements, setTextElements] = useState<TextElement[]>([]);
-  const readingTimeoutRef = useRef<number | null>(null);
+ const [isAIReadingModalOpen, setIsAIReadingModalOpen] = useState(false);
 
   const [readerState, setReaderState] = useState<ReaderState>({
     leftPageNumber: 1,
@@ -102,6 +103,10 @@ const BookReader: React.FC = () => {
     zoomedImage: null,
     scale: 1.0,
   });
+
+  const location = useLocation();
+  const name = location.state?.name;
+  const author = location.state?.author;
 
   useEffect(() => {
     const script = document.createElement("script");
@@ -291,8 +296,8 @@ const BookReader: React.FC = () => {
       setReaderState((prev) => ({
         ...prev,
         totalPages: pdf.numPages,
-        documentName: "Place holder for now",
-        author: "placeholder",
+        documentName: name ?? "Name not found",
+        author: author ?? "Author not found",
         isLoading: false,
       }));
 
@@ -513,7 +518,39 @@ const BookReader: React.FC = () => {
   const hasRightPage =
     readerState.totalPages && rightPageNumber <= readerState.totalPages;
 
-  return (
+      const handleAIReadingConfig = async (config: AIReadingRequest) => {
+    try {
+      console.log("AI Reading Configuration:", config);
+      
+      // Here you would call your C# API to start AI reading
+      // Example API call:
+      /*
+      const response = await fetch('/api/ai-reading/start', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(config),
+      });
+      
+      if (response.ok) {
+        console.log("AI Reading started successfully");
+        // You might want to show a notification or update UI state
+      } else {
+        console.error("Failed to start AI reading");
+      }
+      */
+      
+      // For now, just log the configuration
+      alert(`AI Reading configured!\nVoice: ${config.voiceId}\nSpeed: ${config.voiceSettings.speed}x\nStability: ${config.voiceSettings.stability}`);
+      
+    } catch (error) {
+      console.error("Error configuring AI reading:", error);
+      alert("Failed to configure AI reading. Please try again.");
+    }
+  };
+
+   return (
     <div className="min-h-screen bg-gradient-to-br from-amber-100 via-orange-100 to-rose-100 relative overflow-hidden">
       {/* Ambient background elements */}
       <div className="absolute inset-0 opacity-20">
@@ -541,6 +578,20 @@ const BookReader: React.FC = () => {
             </div>
 
             <div className="flex items-center space-x-3">
+              {/* AI Reading Button */}
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setIsAIReadingModalOpen(true)}
+                disabled={readerState.isLoading}
+                className="bg-white/20 backdrop-blur-sm border-white/30 hover:bg-white/30 transition-all duration-200 flex items-center gap-2"
+              >
+                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M12 14c1.66 0 2.99-1.34 2.99-3L15 5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 14 6.7 11H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c3.28-.48 6-3.3 6-6.72h-1.7z"/>
+                </svg>
+                🎙️ AI Reading
+              </Button>
+              
               {readerState.totalPages && (
                 <div className="bg-white/20 backdrop-blur-sm rounded-xl px-4 py-2 border border-white/30">
                   <span className="text-sm text-amber-800 font-medium">
@@ -762,7 +813,7 @@ const BookReader: React.FC = () => {
                     <div className="mt-4 text-center">
                       <p className="text-sm text-amber-700 font-medium bg-white/20 backdrop-blur-sm px-4 py-2 rounded-xl inline-block border border-white/30">
                         💡 Use arrow keys to navigate • Click pages to zoom •
-                        Use scale controls for sizing
+                        Use 🎙️ AI Reading for narration
                       </p>
                     </div>
                   </div>
@@ -781,6 +832,14 @@ const BookReader: React.FC = () => {
           pageNumber={pageZoomNumber}
         />
       )}
+
+      {/* AI Reading Modal */}
+      <AIReadingModal
+        isOpen={isAIReadingModalOpen}
+        onClose={() => setIsAIReadingModalOpen(false)}
+        onSave={handleAIReadingConfig}
+        documentId={documentGroupId || ""}
+      />
     </div>
   );
 };

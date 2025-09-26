@@ -8,6 +8,8 @@ interface ButtonProps {
   size?: 'sm' | 'md' | 'lg';
   onClick?: () => void;
   to?: string;
+  params?: Record<string, string>;
+  state?: any;
   disabled?: boolean;
   className?: string;
 }
@@ -18,6 +20,8 @@ const Button: React.FC<ButtonProps> = ({
   size = 'md',
   onClick,
   to,
+  params,
+  state,
   disabled = false,
   className = '',
 }) => {
@@ -27,7 +31,18 @@ const Button: React.FC<ButtonProps> = ({
     if (disabled) return;
     
     if (to) {
-      navigate(to);
+      let route = to;
+      if(params){
+          Object.values(params).forEach(value => {
+            route += `/${value}`
+          });
+      }
+
+      if (state) {
+        navigate(route, { state });
+      } else {
+        navigate(route);
+      }
     } else if (onClick) {
       onClick();
     }

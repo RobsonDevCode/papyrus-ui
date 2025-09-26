@@ -29,8 +29,8 @@ class DocumentRetrievalApiService {
       if (searchTerm && searchTerm.trim().length > 0) {
         //add simple jitter
         params.append("searchTerm", searchTerm.trim());
-         const jitter = Math.random() * 100;
-         await new Promise((resolve) => setTimeout(resolve, jitter));
+        const jitter = Math.random() * 100;
+        await new Promise((resolve) => setTimeout(resolve, jitter));
       }
 
       const response = await this.axiosInstance.get<

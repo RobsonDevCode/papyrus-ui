@@ -124,8 +124,8 @@ const Upload: React.FC = () => {
             <Button variant="primary" size="sm" to="/">
               Home
             </Button>
-            <Button variant="primary" size="sm" to="/dashboard">
-              Login
+            <Button variant="primary" size="sm" to="/library">
+              Library
             </Button>
           </div>
         }
