@@ -1,3 +1,8 @@
 export interface LabelsResponse {
-  [key: string]: string;
+  accent?: string;
+  descriptive?: string;
+  age?: string;
+  gender?: string;
+  language?: string;
+  useCase?: string;
 }

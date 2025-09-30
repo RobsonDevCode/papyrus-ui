@@ -1,14 +1,16 @@
 import React, { useState, useEffect, useRef } from "react";
 import Button from "../components/common/Button";
 import ZoomModal from "../components/zoom/ZoomModal";
-import {
-  pagesApi,
-  type FetchPagesRequest,
-} from "../services/PageService";
+import { pagesApi, type FetchPagesRequest } from "../services/PageService";
 import { useLocation, useParams } from "react-router-dom";
 import type { Bookmark } from "../services/models/Bookmark";
 import { bookmarkApi } from "../services/BookmarkService";
-import AIReadingModal, { type AIReadingRequest } from "../components/modals/AiReadingModal";
+import AIReadingModal from "../components/modals/AiReadingModal";
+import type { SetUpAudioSettingsRequest } from "../services/models/SetUpAudioSettingsRequest";
+import { audioSettingsUploadApi } from "../services/AudioSettingsUploadService";
+import { audioSettingsRetrievalApi } from "../services/AudioSettingsRetrievalService";
+import AudioPlayer from "../components/modals/AudioPlayer";
+import type { AudioSettings } from "../services/models/AudioSettings";
 
 interface ReaderState {
   totalPages: number | null;
@@ -23,7 +25,6 @@ interface ReaderState {
   scale: number;
 }
 
-// PDF.js types
 interface PDFDocument {
   numPages: number;
   getPage: (pageNumber: number) => Promise<PDFPage>;
@@ -89,7 +90,12 @@ const BookReader: React.FC = () => {
   const rightTextLayerRef = useRef<HTMLDivElement>(null);
   const [pdfDoc, setPdfDoc] = useState<PDFDocument | null>(null);
   const [textElements, setTextElements] = useState<TextElement[]>([]);
- const [isAIReadingModalOpen, setIsAIReadingModalOpen] = useState(false);
+  const [isAIReadingModalOpen, setIsAIReadingModalOpen] = useState(false);
+  const [isAudioPlayerVisible, setIsAudioPlayerVisible] = useState(false);
+  const [hasAudioSettings, setHasAudioSettings] = useState(false);
+  const [audioSettings, setAudioSettings] = useState<AudioSettings>();
+  const [hasCheckedBookmark, setHasCheckedBookMark] = useState(false);
+
 
   const [readerState, setReaderState] = useState<ReaderState>({
     leftPageNumber: 1,
@@ -139,25 +145,37 @@ const BookReader: React.FC = () => {
     }
   };
 
-  const fetchBookmark = async (
-    documentGroupId: string
-  ): Promise<Bookmark> => {
+  const fetchBookmark = async (documentGroupId: string): Promise<Bookmark> => {
     try {
-      const bookmark = await bookmarkApi.getBookmark(documentGroupId)
-      if(bookmark == undefined){
-        console.log('here');
+      const bookmark = await bookmarkApi.getBookmark(documentGroupId);
+      if (bookmark == undefined || hasCheckedBookmark) {
         const response: Bookmark = {
-            documentGroupId: documentGroupId,
-            page: 1,
-            createdAt:new Date(Date.now()),
-            id: "temp"
+          documentGroupId: documentGroupId,
+          page: 1,
+          createdAt: new Date(Date.now()),
+          id: "temp",
         };
 
+      
         return response;
       }
       return bookmark;
     } catch (error) {
       throw new Error(`Failed to get bookmark for ${documentGroupId}`);
+    }
+  };
+
+  const checkAudioSettings = async () => {
+    try {
+      const audioSettings = await audioSettingsRetrievalApi.getAudioSettings();
+      if (audioSettings && audioSettings.voiceId) {
+        setAudioSettings(audioSettings);
+        setHasAudioSettings(true);
+        setIsAudioPlayerVisible(true);
+      }
+    } catch (error) {
+      console.error("Failed to check audio settings:", error);
+      setHasAudioSettings(false);
     }
   };
 
@@ -196,7 +214,7 @@ const BookReader: React.FC = () => {
         const textDiv = document.createElement("div");
         textDiv.textContent = textItem.str;
         textDiv.style.position = "absolute";
-        textDiv.style.left = tx[4]+ "px";
+        textDiv.style.left = tx[4] + "px";
         textDiv.style.top = tx[5] - fontHeight + "px";
         textDiv.style.fontSize = fontHeight + 0.5 + "px"; //add a small amount so we can make the highlighting constistant
         textDiv.style.fontFamily = style?.fontFamily || "sans-serif";
@@ -255,7 +273,6 @@ const BookReader: React.FC = () => {
 
       await page.render(renderContext).promise;
 
-      // Render text layer if provided
       if (textLayer) {
         return await renderTextLayer(pdf, pageNumber, textLayer, viewport);
       }
@@ -301,28 +318,27 @@ const BookReader: React.FC = () => {
         isLoading: false,
       }));
 
-      console.log('bookmark:', bookmark);
       // Render initial pages with current scale
-      setTimeout(() => {
-        if (leftCanvasRef.current) {
-          renderPDFPage(
-            pdf,
-            bookmark.page,
-            leftCanvasRef.current,
-            readerState.scale,
-            leftTextLayerRef.current || undefined
-          );
-        }
-        if (rightCanvasRef.current && pdf.numPages > 1) {
-          renderPDFPage(
-            pdf,
-            bookmark.page + 1,
-            rightCanvasRef.current,
-            readerState.scale,
-            rightTextLayerRef.current || undefined
-          );
-        }
-      }, 100);
+      if (leftCanvasRef.current) {
+        renderPDFPage(
+          pdf,
+          bookmark.page,
+          leftCanvasRef.current,
+          readerState.scale,
+          leftTextLayerRef.current || undefined
+        );
+      }
+
+      if (rightCanvasRef.current && pdf.numPages > 1) {
+        renderPDFPage(
+          pdf,
+          bookmark.page + 1,
+          rightCanvasRef.current,
+          readerState.scale,
+          rightTextLayerRef.current || undefined
+        );
+      }
+
     } catch (error) {
       setReaderState((prev) => ({
         ...prev,
@@ -466,6 +482,7 @@ const BookReader: React.FC = () => {
     const initializeReader = async () => {
       try {
         await loadPDF(documentGroupId!);
+        await checkAudioSettings();
       } catch (error) {
         setReaderState((prev) => ({
           ...prev,
@@ -488,7 +505,6 @@ const BookReader: React.FC = () => {
         return;
       }
 
-      // Don't navigate if zoom is open
       if (readerState.zoomedImage) return;
 
       switch (event.key) {
@@ -518,39 +534,20 @@ const BookReader: React.FC = () => {
   const hasRightPage =
     readerState.totalPages && rightPageNumber <= readerState.totalPages;
 
-      const handleAIReadingConfig = async (config: AIReadingRequest) => {
+  const handleAIReadingConfig = async (config: SetUpAudioSettingsRequest) => {
     try {
-      console.log("AI Reading Configuration:", config);
-      
-      // Here you would call your C# API to start AI reading
-      // Example API call:
-      /*
-      const response = await fetch('/api/ai-reading/start', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(config),
-      });
-      
-      if (response.ok) {
-        console.log("AI Reading started successfully");
-        // You might want to show a notification or update UI state
-      } else {
-        console.error("Failed to start AI reading");
-      }
-      */
-      
-      // For now, just log the configuration
-      alert(`AI Reading configured!\nVoice: ${config.voiceId}\nSpeed: ${config.voiceSettings.speed}x\nStability: ${config.voiceSettings.stability}`);
-      
+      await audioSettingsUploadApi.createAudioSettings(config);
+      const newAudioSettings = await audioSettingsRetrievalApi.getAudioSettings();
+      setAudioSettings(newAudioSettings);
+      setHasAudioSettings(true);
+      setIsAudioPlayerVisible(true);
     } catch (error) {
       console.error("Error configuring AI reading:", error);
       alert("Failed to configure AI reading. Please try again.");
     }
   };
 
-   return (
+  return (
     <div className="min-h-screen bg-gradient-to-br from-amber-100 via-orange-100 to-rose-100 relative overflow-hidden">
       {/* Ambient background elements */}
       <div className="absolute inset-0 opacity-20">
@@ -586,12 +583,16 @@ const BookReader: React.FC = () => {
                 disabled={readerState.isLoading}
                 className="bg-white/20 backdrop-blur-sm border-white/30 hover:bg-white/30 transition-all duration-200 flex items-center gap-2"
               >
-                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M12 14c1.66 0 2.99-1.34 2.99-3L15 5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 14 6.7 11H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c3.28-.48 6-3.3 6-6.72h-1.7z"/>
+                <svg
+                  className="w-4 h-4"
+                  fill="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path d="M12 14c1.66 0 2.99-1.34 2.99-3L15 5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 14 6.7 11H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c3.28-.48 6-3.3 6-6.72h-1.7z" />
                 </svg>
                 🎙️ AI Reading
               </Button>
-              
+
               {readerState.totalPages && (
                 <div className="bg-white/20 backdrop-blur-sm rounded-xl px-4 py-2 border border-white/30">
                   <span className="text-sm text-amber-800 font-medium">
@@ -654,16 +655,16 @@ const BookReader: React.FC = () => {
                             style={{ cursor: "pointer" }}
                           />
                           <div
-                                  ref={leftTextLayerRef}
-                                  className="pdf-text-layer absolute top-0 left-0 overflow-hidden leading-none"
-                                  style={{
-                                    pointerEvents: "auto",
-                                    userSelect: "text",
-                                    WebkitUserSelect: "text",
-                                    MozUserSelect: "text",
-                                    msUserSelect: "text",
-                                  }}
-                                />
+                            ref={leftTextLayerRef}
+                            className="pdf-text-layer absolute top-0 left-0 overflow-hidden leading-none"
+                            style={{
+                              pointerEvents: "auto",
+                              userSelect: "text",
+                              WebkitUserSelect: "text",
+                              MozUserSelect: "text",
+                              msUserSelect: "text",
+                            }}
+                          />
                           {/* Page Number - Bottom Left */}
                           <div className="absolute bottom-2 left-2 text-xs text-gray-500 bg-white/80 px-2 py-1 rounded">
                             {readerState.leftPageNumber}
@@ -824,9 +825,24 @@ const BookReader: React.FC = () => {
         </div>
       </main>
 
+      {/* Audio Player - appears after user configures AI reading settings */}
+      {hasAudioSettings && (
+        <AudioPlayer
+          isVisible={isAudioPlayerVisible}
+          voiceId={audioSettings?.voiceId ?? ""}
+          voiceSettings={audioSettings?.voiceSettings!}
+          textElements={textElements}
+          currentLeftPage={readerState.leftPageNumber}
+          currentRightPage={readerState.rightPageNumber}
+          totalPages={readerState.totalPages || 0}
+          documentId={documentGroupId || ""}
+          onPageChange={goToPage}
+          onClose={() => setIsAudioPlayerVisible(false)}
+        />
+      )}
       {/* Fullscreen Image Zoom Modal */}
       {readerState.zoomedImage && pageZoomNumber > 0 && (
-        <ZoomModal 
+        <ZoomModal
           imageUrl={readerState.zoomedImage}
           onClose={closeImageZoom}
           pageNumber={pageZoomNumber}

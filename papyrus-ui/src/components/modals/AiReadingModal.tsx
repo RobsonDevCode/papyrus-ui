@@ -4,20 +4,22 @@ import type { VoiceRequest } from "../../services/models/VoiceRequest";
 import type { Voice } from "../../services/models/Voice";
 import type { VoiceSettings } from "../../services/models/VoiceSettings";
 import { voiceRetrievalApi } from "../../services/VoiceRetrievalService";
-import type { VoiceResponse } from "../../services/models/VoiceResponse";
 import type { Paginiation } from "../../services/models/Pagination";
+import Dropdown from "../common/Dropdown";
+import type { SetUpAudioSettingsRequest } from "../../services/models/SetUpAudioSettingsRequest";
 
-export interface AIReadingRequest {
-  id: string;
-  voiceId: string;
-  voiceSettings: VoiceSettings;
-}
+
 
 interface AIReadingModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (config: AIReadingRequest) => void;
+  onSave: (config: SetUpAudioSettingsRequest) => void;
   documentId: string;
+}
+
+interface CategoryOption {
+  value: string;
+  label: string;
 }
 
 const AIReadingModal: React.FC<AIReadingModalProps> = ({
@@ -36,36 +38,128 @@ const AIReadingModal: React.FC<AIReadingModalProps> = ({
   const [currentAudio, setCurrentAudio] = useState<HTMLAudioElement | null>(
     null
   );
-  const [searchTerm, setSearchTerm] = useState<string>("");
-  const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [showFavoritesOnly, setShowFavoritesOnly] = useState<boolean>(false);
   const [voices, setVoices] = useState<Voice[]>([]);
   const [pagination, setPagination] = useState<Paginiation>();
 
   const [filter, setFilter] = useState<VoiceRequest>({
     page: 1,
-    size: 15
+    size: 15,
+    searchTerm: "",
+    accent: undefined,
+    useCase: undefined,
+    gender: undefined
   });
 
-  const fetchVoices = async (request: VoiceRequest): Promise<VoiceResponse> => {
+  const searchTerm = filter.searchTerm || "";
+  const selectedCategory = filter.useCase || "all";
+  const selectedAccent = filter.accent || "all";
+  const selectedGender = filter.gender || "all";
+
+  const formatCategoryName = (category: string): string => {
+    if (category === "all") return "All Categories";
+    return category
+      .split("_")
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+      .join(" ");
+  };
+
+  const categories: CategoryOption[] = [
+    { value: "all", label: "All Categories" },
+    { value: "informative_educational", label: formatCategoryName("informative_educational") },
+    { value: "conversational", label: formatCategoryName("conversational") },
+    { value: "news", label: formatCategoryName("news") },
+    { value: "characters_animation", label: formatCategoryName("characters_animation") },
+    { value: "narration", label: formatCategoryName("narration") },
+    { value: "characters", label: formatCategoryName("characters") },
+    { value: "entertainment_tv", label: formatCategoryName("entertainment_tv") },
+    { value: "social_media", label: formatCategoryName("social_media") },
+    { value: "narrative_story", label: formatCategoryName("narrative_story") }
+  ];
+
+  const accents: CategoryOption[] = [
+    { value: "all", label: "All Accents" },
+    { value: "american", label: "American" },
+    { value: "british", label: "British" },
+    { value: "australian", label: "Australian" },
+    { value: "canadian", label: "Canadian" },
+    { value: "indian", label: "Indian" }
+  ];
+
+  const genders: CategoryOption[] = [
+    { value: "all", label: "All Genders" },
+    { value: "male", label: "Male" },
+    { value: "female", label: "Female" }
+  ];
+
+  const fetchVoicesWithFilters = async (newFilter: VoiceRequest) => {
     try {
-      const response = await voiceRetrievalApi.getVoices(request);
-      return response;
-    } catch {
-      throw new Error("Failed to get voices");
+      const cleanFilter: VoiceRequest = {
+        page: newFilter.page,
+        size: newFilter.size,
+        ...(newFilter.searchTerm && newFilter.searchTerm.trim() !== "" && { searchTerm: newFilter.searchTerm.trim() }),
+        ...(newFilter.useCase && newFilter.useCase !== "all" && { useCase: newFilter.useCase }),
+        ...(newFilter.accent && newFilter.accent !== "all" && { accent: newFilter.accent }),
+        ...(newFilter.gender && newFilter.gender !== "all" && { gender: newFilter.gender })
+      };
+
+      const response = await voiceRetrievalApi.getVoices(cleanFilter);
+      setVoices(response.items);
+      setPagination(response.pagination);
+      setFilter(newFilter);
+    } catch (error) {
+      console.error("Failed to fetch voices:", error);
     }
   };
 
-  useEffect(() => {
-    const initialize = async () => {
-      const response = await fetchVoices(filter);
-      setVoices(response.items);
-      setPagination(response.pagination);
+  const handleSearchChange = (value: string) => {
+    const newFilter = { ...filter, searchTerm: value, page: 1 };
+    fetchVoicesWithFilters(newFilter);
+  };
+
+  const handleCategoryChange = (value: string) => {
+    const newFilter = { 
+      ...filter, 
+      useCase: value === "all" ? undefined : value, 
+      page: 1 
     };
+    fetchVoicesWithFilters(newFilter);
+  };
 
-    initialize();
+  const handleAccentChange = (value: string) => {
+    const newFilter = { 
+      ...filter, 
+      accent: value === "all" ? undefined : value, 
+      page: 1 
+    };
+    fetchVoicesWithFilters(newFilter);
+  };
 
+  const handleGenderChange = (value: string) => {
+    const newFilter = { 
+      ...filter, 
+      gender: value === "all" ? undefined : value, 
+      page: 1 
+    };
+    fetchVoicesWithFilters(newFilter);
+  };
+
+  const goToNextPage = async () => {
+    if (!pagination || pagination.page >= pagination.total) return;
+    const newFilter = { ...filter, page: pagination.page + 1 };
+    fetchVoicesWithFilters(newFilter);
+  };
+
+  const goToPreviousPage = async () => {
+    if (!pagination || pagination.page <= 1) return;
+    const newFilter = { ...filter, page: pagination.page - 1 };
+    fetchVoicesWithFilters(newFilter);
+  };
+
+  useEffect(() => {
     if (isOpen) {
+      fetchVoicesWithFilters(filter);
+      
       const defaultVoice = voices.find((voice) => voice.isSelected);
       if (defaultVoice) {
         setSelectedVoiceId(defaultVoice.voiceId);
@@ -76,7 +170,6 @@ const AIReadingModal: React.FC<AIReadingModalProps> = ({
     }
   }, [isOpen]);
 
-  // Update settings when a new voice is selected (if it has default settings)
   useEffect(() => {
     const selectedVoice = voices.find(
       (voice) => voice.voiceId === selectedVoiceId
@@ -86,31 +179,12 @@ const AIReadingModal: React.FC<AIReadingModalProps> = ({
     }
   }, [selectedVoiceId]);
 
-  // Get unique categories
-  const categories = [
-    "all",
-    ...new Set(voices.map((voice) => voice.category).filter(Boolean)),
-  ];
-
-  // Filter voices based on search, category, and favorites
-  const filteredVoices = voices.filter((voice) => {
-    const matchesSearch =
-      voice.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      voice.description?.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesCategory =
-      selectedCategory === "all" || voice.category === selectedCategory;
-    const matchesFavorites = !showFavoritesOnly || voice.isFavorited;
-    return matchesSearch && matchesCategory && matchesFavorites;
-  });
-
-  // Sort voices: favorites first, then by name
-  const sortedVoices = filteredVoices.sort((a, b) => {
+  const sortedVoices = voices.sort((a, b) => {
     if (a.isFavorited && !b.isFavorited) return -1;
     if (!a.isFavorited && b.isFavorited) return 1;
     return a.name.localeCompare(b.name);
   });
 
-  // Cleanup audio on unmount
   useEffect(() => {
     return () => {
       if (currentAudio) {
@@ -120,83 +194,48 @@ const AIReadingModal: React.FC<AIReadingModalProps> = ({
     };
   }, [currentAudio]);
 
-const handlePreviewVoice = async (voice: Voice) => {
-  if (currentAudio) {
-    currentAudio.pause();
-    currentAudio.onended = null;
-    currentAudio.onerror = null;
-    currentAudio.src = "";
-    setCurrentAudio(null);
-    setPlayingVoiceId(null);
-  }
-
-  if (playingVoiceId === voice.voiceId) {
-    setPlayingVoiceId(null);
-    return;
-  }
-
-  try {
-    setPlayingVoiceId(voice.voiceId);
-    const audio = new Audio(voice.previewUrl);
-    setCurrentAudio(audio);
-    
-    audio.onended = () => {
-      setPlayingVoiceId(null);
-      audio.onended = null;
-      audio.onerror = null;
+  const handlePreviewVoice = async (voice: Voice) => {
+    if (currentAudio) {
+      currentAudio.pause();
+      currentAudio.onended = null;
+      currentAudio.onerror = null;
+      currentAudio.src = "";
       setCurrentAudio(null);
-    };
-    
-    audio.onerror = (e) => {
       setPlayingVoiceId(null);
-      audio.onended = null;
-      audio.onerror = null;
-      setCurrentAudio(null);
-      console.error(`Failed to play preview for ${voice.name}`);
-    };
-    
-    await audio.play();
-    
-  } catch (error) {
-    console.error("Error playing voice preview:", error);
-    setPlayingVoiceId(null);
-    setCurrentAudio(null);
-  }
-};
+    }
 
-  const goToNextPage = async () => {
-    if(!pagination){
+    if (playingVoiceId === voice.voiceId) {
+      setPlayingVoiceId(null);
       return;
     }
-    const nextPage = pagination.page + 1;
-    if(nextPage <= pagination.total){
-       const newFilter: VoiceRequest = {
-           page: nextPage,
-           size: pagination.size,
-       };
-       setFilter(newFilter);
-       const response = await voiceRetrievalApi.getVoices(newFilter);
-       setVoices(response.items);
-       setPagination(response.pagination);
-    }
-  }
 
-  const goToPreviousPage = async () => {
-     if(!pagination){
-      return;
-    }
-     if(pagination.page > 1){
-       const newFilter: VoiceRequest = {
-           page: pagination.page - 1,
-           size: pagination.size,
-       };
-       setFilter(newFilter);
-       const response = await voiceRetrievalApi.getVoices(newFilter);
-       setVoices(response.items);
-       setPagination(response.pagination);
-     }
-  }
+    try {
+      setPlayingVoiceId(voice.voiceId);
+      const audio = new Audio(voice.previewUrl);
+      setCurrentAudio(audio);
 
+      audio.onended = () => {
+        setPlayingVoiceId(null);
+        audio.onended = null;
+        audio.onerror = null;
+        setCurrentAudio(null);
+      };
+
+      audio.onerror = (e) => {
+        setPlayingVoiceId(null);
+        audio.onended = null;
+        audio.onerror = null;
+        setCurrentAudio(null);
+        console.error(`Failed to play preview for ${voice.name}`);
+      };
+
+      await audio.play();
+    } catch (error) {
+      console.error("Error playing voice preview:", error);
+      setPlayingVoiceId(null);
+      setCurrentAudio(null);
+    }
+  };
 
   const handleSave = () => {
     if (!selectedVoiceId) {
@@ -204,7 +243,7 @@ const handlePreviewVoice = async (voice: Voice) => {
       return;
     }
 
-    const config: AIReadingRequest = {
+    const config: SetUpAudioSettingsRequest = {
       id: documentId,
       voiceId: selectedVoiceId,
       voiceSettings: voiceSettings,
@@ -214,15 +253,40 @@ const handlePreviewVoice = async (voice: Voice) => {
     onClose();
   };
 
+  const handleDeselectVoice = () => {
+    setSelectedVoiceId("");
+    // Reset voice settings to defaults
+    setVoiceSettings({
+      stability: 0.75,
+      useSpeakerBoost: true,
+      speed: 1.0,
+    });
+  };
+
+  const handleVoiceClick = (voiceId: string) => {
+    if (selectedVoiceId === voiceId) {
+      handleDeselectVoice();
+    } else {
+      setSelectedVoiceId(voiceId);
+    }
+  };
+
   const handleClose = () => {
-    // Stop any playing audio
     if (currentAudio) {
       currentAudio.pause();
       setPlayingVoiceId(null);
     }
-    // Reset filters
-    setSearchTerm("");
-    setSelectedCategory("all");
+    
+    // Reset filters to initial state
+    const resetFilter: VoiceRequest = {
+      page: 1,
+      size: 15,
+      searchTerm: "",
+      accent: undefined,
+      useCase: undefined,
+      gender: undefined
+    };
+    setFilter(resetFilter);
     setShowFavoritesOnly(false);
     onClose();
   };
@@ -278,7 +342,6 @@ const handlePreviewVoice = async (voice: Voice) => {
                   return currentVoice ? (
                     <div className="flex items-start justify-between">
                       <div className="flex items-center gap-3">
-                        {/* Voice Avatar/Icon */}
                         <div className="w-10 h-10 bg-amber-200 rounded-full flex items-center justify-center">
                           <svg
                             className="w-5 h-5 text-amber-700"
@@ -288,8 +351,6 @@ const handlePreviewVoice = async (voice: Voice) => {
                             <path d="M12 14c1.66 0 2.99-1.34 2.99-3L15 5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 14 6.7 11H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c3.28-.48 6-3.3 6-6.72h-1.7z" />
                           </svg>
                         </div>
-
-                        {/* Voice Details */}
                         <div>
                           <div className="flex items-center gap-2 mb-1">
                             {currentVoice.isFavorited && (
@@ -315,8 +376,6 @@ const handlePreviewVoice = async (voice: Voice) => {
                               {currentVoice.description}
                             </p>
                           )}
-
-                          {/* Current Settings */}
                           <div className="flex items-center gap-4 text-xs text-amber-600">
                             <span>
                               Stability: {voiceSettings.stability.toFixed(2)}
@@ -331,35 +390,57 @@ const handlePreviewVoice = async (voice: Voice) => {
                           </div>
                         </div>
                       </div>
-
-                      {/* Quick Preview for Current */}
-                      <button
-                        onClick={() => handlePreviewVoice(currentVoice)}
-                        disabled={playingVoiceId === currentVoice.voiceId}
-                        className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${
-                          playingVoiceId === currentVoice.voiceId
-                            ? "bg-green-100 text-green-700 cursor-not-allowed"
-                            : "bg-amber-200 hover:bg-amber-300 text-amber-800"
-                        }`}
-                      >
-                        {playingVoiceId === currentVoice.voiceId ? (
-                          <>
-                            <div className="w-3 h-3 border border-green-600 border-t-transparent rounded-full animate-spin"></div>
-                            Playing
-                          </>
-                        ) : (
-                          <>
-                            <svg
-                              className="w-3 h-3"
-                              fill="currentColor"
-                              viewBox="0 0 24 24"
-                            >
-                              <path d="M8 5v14l11-7z" />
-                            </svg>
-                            Preview
-                          </>
-                        )}
-                      </button>
+                      <div className="flex items-center gap-2">
+                        {/* Preview Button */}
+                        <button
+                          onClick={() => handlePreviewVoice(currentVoice)}
+                          disabled={playingVoiceId === currentVoice.voiceId}
+                          className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${
+                            playingVoiceId === currentVoice.voiceId
+                              ? "bg-green-100 text-green-700 cursor-not-allowed"
+                              : "bg-amber-200 hover:bg-amber-300 text-amber-800"
+                          }`}
+                        >
+                          {playingVoiceId === currentVoice.voiceId ? (
+                            <>
+                              <div className="w-3 h-3 border border-green-600 border-t-transparent rounded-full animate-spin"></div>
+                              Playing
+                            </>
+                          ) : (
+                            <>
+                              <svg
+                                className="w-3 h-3"
+                                fill="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path d="M8 5v14l11-7z" />
+                              </svg>
+                              Preview
+                            </>
+                          )}
+                        </button>
+                        
+                        {/* Remove/Deselect Button */}
+                        <button
+                          onClick={handleDeselectVoice}
+                          className="p-1.5 hover:bg-red-100 rounded-lg transition-colors text-red-600 hover:text-red-700"
+                          title="Remove selection"
+                        >
+                          <svg
+                            className="w-4 h-4"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M6 18L18 6M6 6l12 12"
+                            />
+                          </svg>
+                        </button>
+                      </div>
                     </div>
                   ) : (
                     <div className="text-center text-amber-700">
@@ -381,53 +462,96 @@ const handlePreviewVoice = async (voice: Voice) => {
             </h3>
 
             {/* Search and Filter Controls */}
-            <div className="flex flex-col sm:flex-row gap-4 mb-6">
+            <div className="flex flex-col gap-4 mb-6">
               {/* Search */}
-              <div className="flex-1">
-                <div className="relative">
-                  <input
-                    type="text"
-                    placeholder="Search voices..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-400 focus:border-amber-400 bg-white/80"
-                  />
-                  <svg
-                    className="absolute left-3 top-2.5 h-4 w-4 text-gray-400"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-                    />
-                  </svg>
-                </div>
-              </div>
-
-              {/* Category Filter */}
-              <div className="sm:w-48">
-                <select
-                  value={selectedCategory}
-                  onChange={(e) => setSelectedCategory(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-400 focus:border-amber-400 bg-white/80"
+              <div className="relative">
+                <input
+                  type="text"
+                  placeholder="Search voices..."
+                  value={searchTerm}
+                  onChange={(e) => handleSearchChange(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-400 focus:border-amber-400 bg-white/80"
+                />
+                <svg
+                  className="absolute left-3 top-2.5 h-4 w-4 text-gray-400"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
                 >
-                  {categories.map((category) => (
-                    <option key={category} value={category}>
-                      {category === "all" ? "All Categories" : category}
-                    </option>
-                  ))}
-                </select>
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                  />
+                </svg>
               </div>
 
-              {/* Favorites Toggle */}
-              <div className="flex items-center">
+              {/* Filter Row */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                {/* Category Filter */}
+                <Dropdown
+                  options={categories}
+                  value={selectedCategory}
+                  onChange={handleCategoryChange}
+                  placeholder="Select Category"
+                  icon={
+                    <svg
+                      className="w-4 h-4"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M7 7h.01M7 3h5c1.1 0 2 .9 2 2v1M7 7c0 1.1.9 2 2 2h1M7 7H3c-1.1 0-2 .9-2 2v9c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V9c0-1.1-.9-2-2-2h-5"
+                      />
+                    </svg>
+                  }
+                />
+
+                {/* Accent Filter */}
+                <Dropdown
+                  options={accents}
+                  value={selectedAccent}
+                  onChange={handleAccentChange}
+                  placeholder="Select Accent"
+                  icon={
+                    <svg
+                      className="w-4 h-4"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                      />
+                    </svg>
+                  }
+                />
+
+                {/* Gender Filter */}
+                <Dropdown
+                  options={genders}
+                  value={selectedGender}
+                  onChange={handleGenderChange}
+                  placeholder="Select Gender"
+                  icon={
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                    </svg>
+                  }
+                />
+
+                {/* Favorites Toggle */}
                 <button
                   onClick={() => setShowFavoritesOnly(!showFavoritesOnly)}
-                  className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-all ${
+                  className={`w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg border transition-all ${
                     showFavoritesOnly
                       ? "bg-amber-100 border-amber-300 text-amber-700"
                       : "bg-white/80 border-gray-300 text-gray-600 hover:bg-gray-50"
@@ -448,6 +572,42 @@ const handlePreviewVoice = async (voice: Voice) => {
                   </svg>
                   <span className="text-sm font-medium">Favorites</span>
                 </button>
+              </div>
+
+              {/* Active Filters Display */}
+              <div className="flex flex-wrap gap-2">
+                {selectedCategory !== "all" && (
+                  <span className="inline-flex items-center gap-1 px-2 py-1 bg-amber-100 text-amber-800 rounded-full text-xs">
+                    Category: {categories.find(c => c.value === selectedCategory)?.label}
+                    <button onClick={() => handleCategoryChange("all")} className="ml-1 hover:text-amber-900">
+                      ×
+                    </button>
+                  </span>
+                )}
+                {selectedAccent !== "all" && (
+                  <span className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-800 rounded-full text-xs">
+                    Accent: {accents.find(a => a.value === selectedAccent)?.label}
+                    <button onClick={() => handleAccentChange("all")} className="ml-1 hover:text-blue-900">
+                      ×
+                    </button>
+                  </span>
+                )}
+                {selectedGender !== "all" && (
+                  <span className="inline-flex items-center gap-1 px-2 py-1 bg-green-100 text-green-800 rounded-full text-xs">
+                    Gender: {genders.find(g => g.value === selectedGender)?.label}
+                    <button onClick={() => handleGenderChange("all")} className="ml-1 hover:text-green-900">
+                      ×
+                    </button>
+                  </span>
+                )}
+                {showFavoritesOnly && (
+                  <span className="inline-flex items-center gap-1 px-2 py-1 bg-yellow-100 text-yellow-800 rounded-full text-xs">
+                    Favorites Only
+                    <button onClick={() => setShowFavoritesOnly(false)} className="ml-1 hover:text-yellow-900">
+                      ×
+                    </button>
+                  </span>
+                )}
               </div>
             </div>
 
@@ -506,12 +666,11 @@ const handlePreviewVoice = async (voice: Voice) => {
                       } ${index === 0 ? "rounded-t-xl" : ""} ${
                         index === sortedVoices.length - 1 ? "rounded-b-xl" : ""
                       }`}
-                      onClick={() => setSelectedVoiceId(voice.voiceId)}
+                      onClick={() => handleVoiceClick(voice.voiceId)}
                     >
                       <div className="flex items-center justify-between">
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-3">
-                            {/* Selection Indicator */}
                             <div
                               className={`w-4 h-4 rounded-full border-2 flex items-center justify-center transition-all ${
                                 selectedVoiceId === voice.voiceId
@@ -533,11 +692,8 @@ const handlePreviewVoice = async (voice: Voice) => {
                                 </svg>
                               )}
                             </div>
-
-                            {/* Voice Info */}
                             <div className="flex-1">
                               <div className="flex items-center gap-2 mb-1">
-                                {/* Favorite Star */}
                                 {voice.isFavorited && (
                                   <svg
                                     className="w-4 h-4 text-amber-500"
@@ -547,26 +703,20 @@ const handlePreviewVoice = async (voice: Voice) => {
                                     <path d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
                                   </svg>
                                 )}
-
                                 <h4 className="font-semibold text-gray-900 truncate">
                                   {voice.name}
                                 </h4>
-
-                                {/* Default Voice Indicator */}
                                 {voice.isSelected && (
                                   <span className="text-xs px-2 py-0.5 bg-green-100 text-green-700 rounded-full shrink-0">
                                     Default
                                   </span>
                                 )}
-
-                                {/* Category Badge */}
                                 {voice.category && (
                                   <span className="text-xs px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full shrink-0">
                                     {voice.category}
                                   </span>
                                 )}
                               </div>
-
                               <div className="flex items-center gap-2 mb-1">
                                 {voice.description && (
                                   <p className="text-sm text-gray-600 truncate flex-1">
@@ -574,8 +724,6 @@ const handlePreviewVoice = async (voice: Voice) => {
                                   </p>
                                 )}
                               </div>
-
-                              {/* Labels (Accent, Gender, Age) */}
                               {voice.labels && (
                                 <div className="flex gap-1 mt-1">
                                   {voice.labels.accent && (
@@ -598,8 +746,6 @@ const handlePreviewVoice = async (voice: Voice) => {
                             </div>
                           </div>
                         </div>
-
-                        {/* Preview Button */}
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
@@ -638,73 +784,76 @@ const handlePreviewVoice = async (voice: Voice) => {
             </div>
 
             {/* Pagination Controls */}
-            {/* Show pagination if we have more than one page OR if we're not on the first page */}
-            {(pagination && pagination.total > 1) && (
-              <div className="flex items-center justify-between mt-4 px-2 py-3 bg-gray-50/50 rounded-lg border border-gray-200">
-                {/* Page Info */}
-                <div className="text-sm text-gray-600">
-                  Page {pagination.page} of {pagination.total} 
-                  {pagination.size && (
+            {(() => {
+              if (!pagination) return null;
+              
+              // Calculate total pages from total items
+              const totalPages = Math.ceil(pagination.total / pagination.size);
+              
+              // Only show pagination if there's more than 1 page
+              if (totalPages <= 1) return null;
+              
+              return (
+                <div className="flex items-center justify-between mt-4 px-2 py-3 bg-gray-50/50 rounded-lg border border-gray-200">
+                  <div className="text-sm text-gray-600">
+                    Page {pagination.page} of {totalPages}
                     <span className="ml-2 text-xs text-gray-500">
-                      ({pagination.size} per page)
+                      ({pagination.total} total items, {pagination.size} per page)
                     </span>
-                  )}
-                </div>
-
-                {/* Navigation Buttons */}
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={goToPreviousPage}
-                    disabled={pagination.page <= 1}
-                    className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all flex items-center gap-1.5 ${
-                      pagination.page <= 1
-                        ? "bg-gray-100 text-gray-400 cursor-not-allowed"
-                        : "bg-amber-100 hover:bg-amber-200 text-amber-700 hover:shadow-md"
-                    }`}
-                  >
-                    <svg
-                      className="w-4 h-4"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={goToPreviousPage}
+                      disabled={pagination.page <= 1}
+                      className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all flex items-center gap-1.5 ${
+                        pagination.page <= 1
+                          ? "bg-gray-100 text-gray-400 cursor-not-allowed"
+                          : "bg-amber-100 hover:bg-amber-200 text-amber-700 hover:shadow-md"
+                      }`}
                     >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M15 19l-7-7 7-7"
-                      />
-                    </svg>
-                    Previous
-                  </button>
-
-                  <button
-                    onClick={goToNextPage}
-                    disabled={pagination.page >= pagination.total}
-                    className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all flex items-center gap-1.5 ${
-                      pagination.page >= pagination.total
-                        ? "bg-gray-100 text-gray-400 cursor-not-allowed"
-                        : "bg-amber-100 hover:bg-amber-200 text-amber-700 hover:shadow-md"
-                    }`}
-                  >
-                    Next
-                    <svg
-                      className="w-4 h-4"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
+                      <svg
+                        className="w-4 h-4"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M15 19l-7-7 7-7"
+                        />
+                      </svg>
+                      Previous
+                    </button>
+                    <button
+                      onClick={goToNextPage}
+                      disabled={pagination.page >= totalPages}
+                      className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all flex items-center gap-1.5 ${
+                        pagination.page >= totalPages
+                          ? "bg-gray-100 text-gray-400 cursor-not-allowed"
+                          : "bg-amber-100 hover:bg-amber-200 text-amber-700 hover:shadow-md"
+                      }`}
                     >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M9 5l7 7-7 7"
-                      />
-                    </svg>
-                  </button>
+                      Next
+                      <svg
+                        className="w-4 h-4"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M9 5l7 7-7 7"
+                        />
+                      </svg>
+                    </button>
+                  </div>
                 </div>
-              </div>
-            )}
+              );
+            })()}
           </div>
 
           {/* Voice Settings */}
@@ -712,9 +861,7 @@ const handlePreviewVoice = async (voice: Voice) => {
             <h3 className="text-lg font-semibold text-gray-800 mb-4">
               Voice Settings
             </h3>
-
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              {/* Stability */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Stability: {voiceSettings.stability.toFixed(2)}
@@ -731,23 +878,13 @@ const handlePreviewVoice = async (voice: Voice) => {
                       stability: parseFloat(e.target.value),
                     }))
                   }
-                  className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-amber-400 focus:ring-opacity-50
-                    [&::-webkit-slider-track]:bg-gray-200 [&::-webkit-slider-track]:h-2 [&::-webkit-slider-track]:rounded-lg
-                    [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:h-5 [&::-webkit-slider-thumb]:w-5 
-                    [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-amber-400 [&::-webkit-slider-thumb]:cursor-pointer 
-                    [&::-webkit-slider-thumb]:shadow-lg [&::-webkit-slider-thumb]:transition-all [&::-webkit-slider-thumb]:hover:bg-amber-500 
-                    [&::-webkit-slider-thumb]:hover:scale-110
-                    [&::-moz-range-track]:bg-gray-200 [&::-moz-range-track]:h-2 [&::-moz-range-track]:rounded-lg [&::-moz-range-track]:border-none
-                    [&::-moz-range-thumb]:h-5 [&::-moz-range-thumb]:w-5 [&::-moz-range-thumb]:rounded-full 
-                    [&::-moz-range-thumb]:bg-amber-400 [&::-moz-range-thumb]:cursor-pointer [&::-moz-range-thumb]:border-none"
+                  className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-amber-400 focus:ring-opacity-50"
                 />
                 <div className="flex justify-between text-xs text-gray-500 mt-1">
                   <span>Variable</span>
                   <span>Stable</span>
                 </div>
               </div>
-
-              {/* Speed */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Speed: {voiceSettings.speed.toFixed(2)}x
@@ -764,23 +901,13 @@ const handlePreviewVoice = async (voice: Voice) => {
                       speed: parseFloat(e.target.value),
                     }))
                   }
-                  className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-amber-400 focus:ring-opacity-50
-                    [&::-webkit-slider-track]:bg-gray-200 [&::-webkit-slider-track]:h-2 [&::-webkit-slider-track]:rounded-lg
-                    [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:h-5 [&::-webkit-slider-thumb]:w-5 
-                    [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-amber-400 [&::-webkit-slider-thumb]:cursor-pointer 
-                    [&::-webkit-slider-thumb]:shadow-lg [&::-webkit-slider-thumb]:transition-all [&::-webkit-slider-thumb]:hover:bg-amber-500 
-                    [&::-webkit-slider-thumb]:hover:scale-110
-                    [&::-moz-range-track]:bg-gray-200 [&::-moz-range-track]:h-2 [&::-moz-range-track]:rounded-lg [&::-moz-range-track]:border-none
-                    [&::-moz-range-thumb]:h-5 [&::-moz-range-thumb]:w-5 [&::-moz-range-thumb]:rounded-full 
-                    [&::-moz-range-thumb]:bg-amber-400 [&::-moz-range-thumb]:cursor-pointer [&::-moz-range-thumb]:border-none"
+                  className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-amber-400 focus:ring-opacity-50"
                 />
                 <div className="flex justify-between text-xs text-gray-500 mt-1">
                   <span>0.5x</span>
                   <span>2x</span>
                 </div>
               </div>
-
-              {/* Speaker Boost */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Audio Enhancement
