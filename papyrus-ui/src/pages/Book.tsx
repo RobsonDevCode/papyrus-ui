@@ -96,7 +96,6 @@ const BookReader: React.FC = () => {
   const [audioSettings, setAudioSettings] = useState<AudioSettings>();
   const [hasCheckedBookmark, setHasCheckedBookMark] = useState(false);
 
-
   const [readerState, setReaderState] = useState<ReaderState>({
     leftPageNumber: 1,
     rightPageNumber: 2,
@@ -156,7 +155,6 @@ const BookReader: React.FC = () => {
           id: "temp",
         };
 
-      
         return response;
       }
       return bookmark;
@@ -246,6 +244,47 @@ const BookReader: React.FC = () => {
       );
       return [];
     }
+  };
+
+  const onGetPageText = async (
+    leftPage: number,
+    rightPage: number
+  ): Promise<string> => {
+    if (!pdfDoc) return "";
+
+    const leftElements: TextElement[] = [];
+    const rightElements: TextElement[] = [];
+
+    if (leftPage >= 1 && leftPage <= pdfDoc.numPages) {
+      const page = await pdfDoc.getPage(leftPage);
+      const textContent = await page.getTextContent();
+      textContent.items.forEach((item: PDFTextItem) => {
+        leftElements.push({
+          element: document.createElement("div"),
+          text: item.str,
+          index: 0,
+          pageNumber: leftPage,
+        });
+      });
+    
+      if (rightPage >= 1 && rightPage <= pdfDoc.numPages) {
+        const page = await pdfDoc.getPage(rightPage);
+        const textContent = await page.getTextContent();
+        textContent.items.forEach((item: PDFTextItem) => {
+          rightElements.push({
+            element: document.createElement("div"),
+            text: item.str,
+            index: 0,
+            pageNumber: rightPage,
+          });
+        });
+      }
+    }
+
+    const leftText = leftElements.map(el => el.text).join(' ');
+    const rightText = rightElements.map(el => el.text).join(' ');
+
+    return `${leftText} ${rightText}`;
   };
 
   const renderPDFPage = async (
@@ -338,7 +377,6 @@ const BookReader: React.FC = () => {
           rightTextLayerRef.current || undefined
         );
       }
-
     } catch (error) {
       setReaderState((prev) => ({
         ...prev,
@@ -537,7 +575,8 @@ const BookReader: React.FC = () => {
   const handleAIReadingConfig = async (config: SetUpAudioSettingsRequest) => {
     try {
       await audioSettingsUploadApi.createAudioSettings(config);
-      const newAudioSettings = await audioSettingsRetrievalApi.getAudioSettings();
+      const newAudioSettings =
+        await audioSettingsRetrievalApi.getAudioSettings();
       setAudioSettings(newAudioSettings);
       setHasAudioSettings(true);
       setIsAudioPlayerVisible(true);
@@ -831,13 +870,13 @@ const BookReader: React.FC = () => {
           isVisible={isAudioPlayerVisible}
           voiceId={audioSettings?.voiceId ?? ""}
           voiceSettings={audioSettings?.voiceSettings!}
-          textElements={textElements}
           currentLeftPage={readerState.leftPageNumber}
           currentRightPage={readerState.rightPageNumber}
           totalPages={readerState.totalPages || 0}
           documentId={documentGroupId || ""}
           onPageChange={goToPage}
           onClose={() => setIsAudioPlayerVisible(false)}
+          onGetPageText={onGetPageText}
         />
       )}
       {/* Fullscreen Image Zoom Modal */}

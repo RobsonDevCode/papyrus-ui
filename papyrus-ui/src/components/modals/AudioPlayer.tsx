@@ -7,35 +7,26 @@ interface AudioPlayerProps {
   isVisible: boolean;
   voiceId: string;
   voiceSettings: VoiceSettings;
-  textElements: TextElement[];
   currentLeftPage: number;
   currentRightPage: number;
   totalPages: number;
   documentId: string;
   onPageChange: (pageNumber: number) => void;
   onClose: () => void;
-  onPreGeneratePages?: (leftPage: number, rightPage: number) => void;
-}
-
-interface TextElement {
-  element: HTMLDivElement;
-  text: string;
-  index: number;
-  pageNumber: number;
+  onGetPageText: (leftPage: number, rightPage: number) => Promise<string>;
 }
 
 const AudioPlayer: React.FC<AudioPlayerProps> = ({
   isVisible,
   voiceId,
   voiceSettings,
-  textElements,
   currentLeftPage,
   currentRightPage,
   totalPages,
   documentId,
   onPageChange,
   onClose,
-  onPreGeneratePages,
+  onGetPageText,
 }) => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
@@ -44,7 +35,6 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({
     null
   );
   const [isLoading, setIsLoading] = useState(false);
-  const [currentTextIndex, setCurrentTextIndex] = useState(0);
   const [isExpanded, setIsExpanded] = useState(false);
   const [volume, setVolume] = useState(1);
   const [nextAudio, setNextAudio] = useState<HTMLAudioElement | null>(null);
@@ -57,8 +47,13 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({
     text: "",
   });
 
+  const hasPreGeneratedRef = useRef<boolean>(false);
+
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const timeUpdateIntervalRef = useRef<number | null>(null);
+  const currentLeftPageRef = useRef(currentLeftPage);
+  const currentRightPageRef = useRef(currentRightPage);
+
   const shouldContinuePlaying = useRef<boolean>(false);
 
   useEffect(() => {
@@ -75,86 +70,42 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({
         clearInterval(timeUpdateIntervalRef.current);
       }
     };
-  }, [currentAudio, nextAudio]);
+  }, []);
+
+  useEffect(() => {
+  currentLeftPageRef.current = currentLeftPage;
+  currentRightPageRef.current = currentRightPage;
+}, [currentLeftPage, currentRightPage]);
 
   useEffect(() => {
     setHasPreGenerated(false);
+    hasPreGeneratedRef.current = false;
   }, [currentLeftPage, currentRightPage]);
 
-  const getCurrentPageText = () => {
-    const leftPageElements = textElements.filter(
-      (el) => el.pageNumber === currentLeftPage
-    );
-    const rightPageElements = textElements.filter(
-      (el) => el.pageNumber === currentRightPage
-    );
-
-    leftPageElements.sort((a, b) => a.index - b.index);
-    rightPageElements.sort((a, b) => a.index - b.index);
-
-    const leftPageText = leftPageElements.map((el) => el.text).join(" ");
-    const rightPageText = rightPageElements.map((el) => el.text).join(" ");
-
-    return `${leftPageText} ${rightPageText}`.trim();
+  const getPageText = async (
+    leftPage: number,
+    rightPage: number
+  ): Promise<string> => {
+    return await onGetPageText(leftPage, rightPage);
   };
 
   const generateAudio = async () => {
     setIsLoading(true);
     try {
-      const text = getCurrentPageText();
-      request.text = text;
-      request.pages = [currentLeftPage, currentRightPage];
-      console.log(request.pages);
-      setRequest(request);
+      const text = await getPageText(currentLeftPage, currentRightPage);
+      console.log(`text: ${text}`);
+      const audioRequest = {
+        ...request,
+        text: text,
+        pages: [currentLeftPage, currentRightPage],
+      };
 
-      const audioUrl = await audioApi.createAudio(request);
+      const audioUrl = await audioApi.createAudio(audioRequest);
       return audioUrl;
     } catch (error) {
       console.error("Failed to generate audio:", error);
       setIsLoading(false);
       throw error;
-    }
-  };
-
-  const preGenerateNextPages = async () => {
-    if (hasPreGenerated) return;
-
-    const nextLeftPage = currentLeftPage + 2;
-    const nextRightPage = currentRightPage + 2;
-
-    // Check if there are more pages to read
-    if (nextLeftPage <= totalPages) {
-      setHasPreGenerated(true);
-
-      try {
-        // Get text from next pages
-        const nextLeftElements = textElements.filter(
-          (el) => el.pageNumber === nextLeftPage
-        );
-        const nextRightElements = textElements.filter(
-          (el) => el.pageNumber === nextRightPage
-        );
-
-        const nextLeftText = nextLeftElements.map((el) => el.text).join(" ");
-        const nextRightText = nextRightElements.map((el) => el.text).join(" ");
-        const nextText = `${nextLeftText} ${nextRightText}`.trim();
-
-        request.pages = [nextLeftPage, nextRightPage];
-        request.text = nextText;
-
-        const audioUrl = await audioApi.createAudio(request);
-
-        // Create the pre-loaded audio
-        const audio = new Audio(audioUrl);
-        audio.volume = volume;
-        setNextAudio(audio);
-
-        if (onPreGeneratePages) {
-          onPreGeneratePages(nextLeftPage, nextRightPage);
-        }
-      } catch (error) {
-        console.error("Failed to pre-generate audio:", error);
-      }
     }
   };
 
@@ -176,6 +127,10 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({
 
         audio.ontimeupdate = () => {
           setCurrentTime(audio.currentTime);
+
+          if (audio.duration && audio.currentTime / audio.duration > 0.6) {
+            preGenerateNextPages();
+          }
         };
 
         audio.onended = () => {
@@ -206,37 +161,56 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({
 
   const handleAudioEnd = async () => {
     setCurrentTime(0);
+    const nextLeftPage = currentLeftPageRef.current + 2;
+    const nextRightPage = currentRightPageRef.current + 2;
 
-    const nextLeftPage = currentLeftPage + 2;
-
-    // Check if there are more pages to read
     if (nextLeftPage <= totalPages) {
-      // Move to next page spread
+      // Change the page
       onPageChange(nextLeftPage);
 
-      // Clear current audio
+      // Clean up current audio
       if (currentAudio) {
         currentAudio.pause();
         currentAudio.src = "";
       }
 
-      // No pre-generated audio, generate now
-      console.log("🎵 No pre-generated audio available, generating now...");
       try {
-        const audioUrl = await generateAudio();
-        const audio = new Audio(audioUrl);
-        audio.volume = volume;
+        let audio: HTMLAudioElement;
+
+        if (nextAudio) {
+          console.log("using pre gen");
+          audio = nextAudio;
+
+          setNextAudio(null);
+          setDuration(audio.duration);
+        } else {
+          console.log("generating on demand");
+          setIsLoading(true);
+          const text = await onGetPageText(nextLeftPage, nextRightPage);
+
+          const audioRequest = {
+            ...request,
+            text,
+            pages: [nextLeftPage, nextRightPage],
+          };
+
+          const audioUrl = await audioApi.createAudio(audioRequest);
+          audio = new Audio(audioUrl);
+          audio.volume = volume;
+
+          audio.onloadedmetadata = () => {
+            setDuration(audio.duration);
+            setIsLoading(false);
+          };
+        }
+
         setCurrentAudio(audio);
         setHasPreGenerated(false);
-
-        audio.onloadedmetadata = () => {
-          setDuration(audio.duration);
-        };
 
         audio.ontimeupdate = () => {
           setCurrentTime(audio.currentTime);
 
-          if (audio.currentTime / audio.duration > 0.8) {
+          if (audio.duration && audio.currentTime / audio.duration > 0.6) {
             preGenerateNextPages();
           }
         };
@@ -245,13 +219,19 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({
           handleAudioEnd();
         };
 
-        await audio.play();
-        setIsPlaying(true);
+        if (shouldContinuePlaying.current) {
+          await audio.play();
+          setIsPlaying(true);
+        }
       } catch (error) {
         console.error("Error generating and playing audio:", error);
         setIsPlaying(false);
+        setIsLoading(false);
         shouldContinuePlaying.current = false;
       }
+    } else {
+      setIsPlaying(false);
+      shouldContinuePlaying.current = false;
     }
   };
 
@@ -288,6 +268,45 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({
       }
     }
   };
+
+  const preGenerateNextPages = async () => {
+    if (hasPreGeneratedRef.current) return; // Check ref first
+    hasPreGeneratedRef.current = true;
+
+    if (hasPreGenerated) return;
+
+    const nextLeftPage = currentLeftPageRef.current + 2;
+    const nextRightPage = currentRightPageRef.current + 2;
+
+    if (nextLeftPage <= totalPages) {
+      hasPreGeneratedRef.current = true;
+      setHasPreGenerated(true);
+
+      try {
+        const text = await onGetPageText(nextLeftPage, nextRightPage);
+
+        const audioRequest = {
+          ...request,
+          text,
+          pages: [nextLeftPage, nextRightPage],
+        };
+
+        console.log("Pre-generating audio for pages:", audioRequest.pages);
+        const audioUrl = await audioApi.createAudio(audioRequest);
+
+        const audio = new Audio(audioUrl);
+        audio.volume = volume;
+
+        setNextAudio(audio);
+        console.log("Successfully pre-generated audio");
+      } catch (error) {
+        console.error("Failed to pre-generate audio:", error);
+        hasPreGeneratedRef.current = false; // Reset on error
+        setHasPreGenerated(false);
+      }
+    }
+  };
+
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
