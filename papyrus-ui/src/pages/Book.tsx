@@ -214,17 +214,17 @@ const BookReader: React.FC = () => {
         textDiv.style.position = "absolute";
         textDiv.style.left = tx[4] + "px";
         textDiv.style.top = tx[5] - fontHeight + "px";
-        textDiv.style.fontSize = fontHeight + 0.5 + "px"; //add a small amount so we can make the highlighting constistant
+        textDiv.style.fontSize = fontHeight + "px";
         textDiv.style.fontFamily = style?.fontFamily || "sans-serif";
         textDiv.style.transform = "rotate(" + angle + "rad)";
         textDiv.style.transformOrigin = "0% 0%";
         textDiv.style.userSelect = "text";
         textDiv.style.cursor = "text";
         textDiv.style.color = "transparent";
-        textDiv.style.transition = "background-color 0.3s ease";
         textDiv.style.borderRadius = "6px";
         textDiv.style.padding = "2px 4px";
         textDiv.classList.add("pdf-text-item");
+        textDiv.classList.add("transition-all", "duration-200", "ease-in-out"); 
         textDiv.dataset.index = `${pageNumber}-${index}`;
 
         textLayer.appendChild(textDiv);
@@ -537,7 +537,6 @@ const BookReader: React.FC = () => {
 
   useEffect(() => {
     const handleKeyPress = (event: KeyboardEvent) => {
-      // Close zoom if open
       if (readerState.zoomedImage && event.key === "Escape") {
         closeImageZoom();
         return;
@@ -585,6 +584,43 @@ const BookReader: React.FC = () => {
       alert("Failed to configure AI reading. Please try again.");
     }
   };
+
+const handleHighlightText = (charIndex: number, isActive: boolean) => {
+  let cumulativeIndex = 0;
+  
+  for (const textElement of textElements) {
+    const textLength = textElement.text.length;
+    
+    if (charIndex >= cumulativeIndex && charIndex < cumulativeIndex + textLength) {
+      if (isActive) {
+        // Add blue translucent highlight
+        textElement.element.classList.add(
+          'bg-blue-400/40',
+          'shadow-lg',
+          'shadow-blue-300/30',
+          'scale-105'
+        );
+        
+        textElement.element.scrollIntoView({
+          behavior: 'smooth',
+          block: 'center',
+          inline: 'nearest'
+        });
+      } else {
+        textElement.element.classList.remove(
+          'bg-blue-400/40',
+          'shadow-lg',
+          'shadow-blue-300/30',
+          'scale-105'
+        );
+      }
+      break;
+    }
+    
+    cumulativeIndex += textLength;
+  }
+};
+
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-amber-100 via-orange-100 to-rose-100 relative overflow-hidden">
@@ -877,6 +913,7 @@ const BookReader: React.FC = () => {
           onPageChange={goToPage}
           onClose={() => setIsAudioPlayerVisible(false)}
           onGetPageText={onGetPageText}
+          onHighlightText={handleHighlightText}
         />
       )}
       {/* Fullscreen Image Zoom Modal */}

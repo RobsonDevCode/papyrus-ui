@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef } from "react";
 import { audioApi } from "../../services/AudioService";
 import type { CreateAudioBookRequest } from "../../services/models/CreateAudioBookRequest";
 import type { VoiceSettings } from "../../services/models/VoiceSettings";
+import type { AlignmentData } from "../../services/models/AlignmentData";
+import type { AudioWithAlignment } from "../../services/models/AudioWithAlignment";
 
 interface AudioPlayerProps {
   isVisible: boolean;
@@ -14,6 +16,7 @@ interface AudioPlayerProps {
   onPageChange: (pageNumber: number) => void;
   onClose: () => void;
   onGetPageText: (leftPage: number, rightPage: number) => Promise<string>;
+  onHighlightText?: (charIndex: number, isActive: boolean) => void;
 }
 
 const AudioPlayer: React.FC<AudioPlayerProps> = ({
@@ -27,6 +30,7 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({
   onPageChange,
   onClose,
   onGetPageText,
+  onHighlightText,
 }) => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
@@ -37,8 +41,17 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
   const [volume, setVolume] = useState(1);
+  const [playbackRate, setPlaybackRate] = useState(1);
   const [nextAudio, setNextAudio] = useState<HTMLAudioElement | null>(null);
   const [hasPreGenerated, setHasPreGenerated] = useState(false);
+  const [currentAlignment, setCurrentAlignment] = useState<
+    AlignmentData[] | null
+  >(null);
+  const [nextAlignment, setNextAlignment] = useState<AlignmentData[] | null>(
+    null
+  );
+  const lastValidCharIndexRef = useRef(-1);
+
   const [request, setRequest] = useState<CreateAudioBookRequest>({
     documentGroupId: documentId,
     voiceId: voiceId,
@@ -48,13 +61,12 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({
   });
 
   const hasPreGeneratedRef = useRef<boolean>(false);
-
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const timeUpdateIntervalRef = useRef<number | null>(null);
   const currentLeftPageRef = useRef(currentLeftPage);
   const currentRightPageRef = useRef(currentRightPage);
-
   const shouldContinuePlaying = useRef<boolean>(false);
+  const previousCharIndexRef = useRef(-1);
 
   useEffect(() => {
     return () => {
@@ -73,14 +85,126 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({
   }, []);
 
   useEffect(() => {
-  currentLeftPageRef.current = currentLeftPage;
-  currentRightPageRef.current = currentRightPage;
-}, [currentLeftPage, currentRightPage]);
+    currentLeftPageRef.current = currentLeftPage;
+    currentRightPageRef.current = currentRightPage;
+  }, [currentLeftPage, currentRightPage]);
 
   useEffect(() => {
     setHasPreGenerated(false);
     hasPreGeneratedRef.current = false;
   }, [currentLeftPage, currentRightPage]);
+
+  useEffect(() => {
+    if (previousCharIndexRef.current !== -1 && onHighlightText) {
+      onHighlightText(previousCharIndexRef.current, false);
+      previousCharIndexRef.current = -1;
+      lastValidCharIndexRef.current = -1;
+    }
+  }, [currentAlignment, onHighlightText]);
+
+  // Build a flat timing array ONCE when alignment loads
+  const [timingData, setTimingData] = useState<
+    Array<{
+      startTime: number;
+      endTime: number;
+      charIndex: number;
+    }>
+  >([]);
+
+  // This runs ONCE when alignment changes
+  useEffect(() => {
+    if (!currentAlignment) {
+      setTimingData([]);
+      return;
+    }
+
+    const data: Array<{
+      startTime: number;
+      endTime: number;
+      charIndex: number;
+    }> = [];
+    let charCount = 0;
+
+
+    for (const alignment of currentAlignment) {
+      if (
+        !alignment?.characters?.length ||
+        !alignment.charactersStartTimesSeconds ||
+        !alignment.charactersEndTimesSeconds
+      ) {
+        continue;
+      }
+
+      for (let i = 0; i < alignment.characters.length; i++) {
+        const startTime = parseFloat(alignment.charactersStartTimesSeconds[i]);
+        const endTime = parseFloat(alignment.charactersEndTimesSeconds[i]);
+
+        if (!isNaN(startTime) && !isNaN(endTime)) {
+          data.push({ startTime, endTime, charIndex: charCount });
+        }
+        charCount++;
+      }
+    }
+
+    setTimingData(data);
+  }, [currentAlignment]); // Only runs when alignment changes
+
+  useEffect(() => {
+    if (!isPlaying || timingData.length === 0) {
+      if (previousCharIndexRef.current !== -1 && onHighlightText) {
+        onHighlightText(previousCharIndexRef.current, false);
+        previousCharIndexRef.current = -1;
+      }
+      return;
+    }
+
+    // No normalization needed! 
+    // audio.currentTime already advances at the playback rate
+    // and alignment data is based on the same timeline
+    let charIndex = lastValidCharIndexRef.current;
+
+    for (const timing of timingData) {
+      if (currentTime >= timing.startTime && currentTime <= timing.endTime) {
+        charIndex = timing.charIndex;
+        break;
+      }
+      if (currentTime > timing.endTime) {
+        lastValidCharIndexRef.current = timing.charIndex;
+      }
+    }
+
+    if (charIndex !== previousCharIndexRef.current) {
+      if (previousCharIndexRef.current !== -1 && onHighlightText) {
+        onHighlightText(previousCharIndexRef.current, false);
+      }
+
+      if (charIndex !== -1 && onHighlightText) {
+        onHighlightText(charIndex, true);
+      }
+
+      previousCharIndexRef.current = charIndex;
+    }
+  }, [currentTime, isPlaying, onHighlightText, timingData]);
+
+
+  const generateAudio = async (): Promise<AudioWithAlignment> => {
+    setIsLoading(true);
+    try {
+      const text = await getPageText(currentLeftPage, currentRightPage);
+      const audioRequest = {
+        ...request,
+        text: text,
+        pages: [currentLeftPage, currentRightPage],
+      };
+
+      const response = await audioApi.createAudio(audioRequest);
+      return response;
+    } catch (error) {
+      console.error("Failed to generate audio:", error);
+      setIsLoading(false);
+      throw error;
+    }
+  };
 
   const getPageText = async (
     leftPage: number,
@@ -89,35 +213,31 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({
     return await onGetPageText(leftPage, rightPage);
   };
 
-  const generateAudio = async () => {
-    setIsLoading(true);
-    try {
-      const text = await getPageText(currentLeftPage, currentRightPage);
-      console.log(`text: ${text}`);
-      const audioRequest = {
-        ...request,
-        text: text,
-        pages: [currentLeftPage, currentRightPage],
-      };
-
-      const audioUrl = await audioApi.createAudio(audioRequest);
-      return audioUrl;
-    } catch (error) {
-      console.error("Failed to generate audio:", error);
-      setIsLoading(false);
-      throw error;
-    }
-  };
-
   const handlePlay = async () => {
     try {
       if (!isPlaying && !currentAudio) {
         shouldContinuePlaying.current = true;
-        const audioUrl = await generateAudio();
+        const audioData = await generateAudio();
 
-        const audio = new Audio(audioUrl);
+        const alignmentText = audioData.alignment
+          ?.map((chunk) => chunk.characters.join(""))
+          .join(" ");
+
+        const text = await getPageText(currentLeftPage, currentRightPage);
+
+        console.log("Alignment vs Elements:", {
+          alignmentLength: alignmentText?.length || 0,
+          elementsLength: text.length,
+          alignmentStart: alignmentText?.substring(0, 100),
+          elementsStart: text.substring(0, 100),
+          match: alignmentText === text,
+        });
+
+        const audio = new Audio(audioData.audioUrl);
         audio.volume = volume;
+        audio.playbackRate = playbackRate;
         setCurrentAudio(audio);
+        setCurrentAlignment(audioData.alignment);
         audioRef.current = audio;
 
         audio.onloadedmetadata = () => {
@@ -141,12 +261,10 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({
         setIsPlaying(true);
       } else if (currentAudio) {
         if (isPlaying) {
-          // Pause
           currentAudio.pause();
           setIsPlaying(false);
           shouldContinuePlaying.current = false;
         } else {
-          // Resume
           shouldContinuePlaying.current = true;
           await currentAudio.play();
           setIsPlaying(true);
@@ -160,15 +278,20 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({
   };
 
   const handleAudioEnd = async () => {
+    // Clear highlighting from previous page
+    if (previousCharIndexRef.current !== -1 && onHighlightText) {
+      onHighlightText(previousCharIndexRef.current, false);
+      previousCharIndexRef.current = -1;
+      lastValidCharIndexRef.current = -1;
+    }
+
     setCurrentTime(0);
     const nextLeftPage = currentLeftPageRef.current + 2;
     const nextRightPage = currentRightPageRef.current + 2;
 
     if (nextLeftPage <= totalPages) {
-      // Change the page
       onPageChange(nextLeftPage);
 
-      // Clean up current audio
       if (currentAudio) {
         currentAudio.pause();
         currentAudio.src = "";
@@ -176,15 +299,16 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({
 
       try {
         let audio: HTMLAudioElement;
+        let alignment: AlignmentData[];
 
-        if (nextAudio) {
-          console.log("using pre gen");
+        if (nextAudio && nextAlignment) {
           audio = nextAudio;
-
+          audio.playbackRate = playbackRate;
+          alignment = nextAlignment;
           setNextAudio(null);
+          setNextAlignment(null);
           setDuration(audio.duration);
         } else {
-          console.log("generating on demand");
           setIsLoading(true);
           const text = await onGetPageText(nextLeftPage, nextRightPage);
 
@@ -194,9 +318,11 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({
             pages: [nextLeftPage, nextRightPage],
           };
 
-          const audioUrl = await audioApi.createAudio(audioRequest);
-          audio = new Audio(audioUrl);
+          const response = await audioApi.createAudio(audioRequest);
+          audio = new Audio(response.audioUrl);
+          alignment = response.alignment;
           audio.volume = volume;
+          audio.playbackRate = playbackRate;
 
           audio.onloadedmetadata = () => {
             setDuration(audio.duration);
@@ -205,6 +331,7 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({
         }
 
         setCurrentAudio(audio);
+        setCurrentAlignment(alignment);
         setHasPreGenerated(false);
 
         audio.ontimeupdate = () => {
@@ -238,6 +365,13 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({
   const handleStop = () => {
     shouldContinuePlaying.current = false;
 
+    // Clear highlighting
+    if (previousCharIndexRef.current !== -1 && onHighlightText) {
+      onHighlightText(previousCharIndexRef.current, false);
+      previousCharIndexRef.current = -1;
+      lastValidCharIndexRef.current = -1;
+    }
+
     if (currentAudio) {
       currentAudio.pause();
       currentAudio.currentTime = 0;
@@ -245,7 +379,6 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({
       setIsPlaying(false);
     }
 
-    // Clean up pre-generated audio
     if (nextAudio) {
       nextAudio.pause();
       nextAudio.src = "";
@@ -253,6 +386,7 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({
     }
 
     setHasPreGenerated(false);
+    setCurrentAlignment(null);
   };
 
   const handleSeek = (newTime: number) => {
@@ -269,8 +403,32 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({
     }
   };
 
+  const handlePlaybackRateChange = (newRate: number) => {
+    setPlaybackRate(newRate);
+    if (currentAudio) {
+      currentAudio.playbackRate = newRate;
+    }
+    if (nextAudio) {
+      nextAudio.playbackRate = newRate;
+    }
+  };
+
+  const handleSkipBackward = () => {
+    if (currentAudio) {
+      const newTime = Math.max(0, currentTime - 15);
+      handleSeek(newTime);
+    }
+  };
+
+  const handleSkipForward = () => {
+    if (currentAudio) {
+      const newTime = Math.min(duration, currentTime + 15);
+      handleSeek(newTime);
+    }
+  };
+
   const preGenerateNextPages = async () => {
-    if (hasPreGeneratedRef.current) return; // Check ref first
+    if (hasPreGeneratedRef.current) return;
     hasPreGeneratedRef.current = true;
 
     if (hasPreGenerated) return;
@@ -291,17 +449,17 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({
           pages: [nextLeftPage, nextRightPage],
         };
 
-        console.log("Pre-generating audio for pages:", audioRequest.pages);
-        const audioUrl = await audioApi.createAudio(audioRequest);
+        const response = await audioApi.createAudio(audioRequest);
 
-        const audio = new Audio(audioUrl);
+        const audio = new Audio(response.audioUrl);
         audio.volume = volume;
+        audio.playbackRate = playbackRate;
 
         setNextAudio(audio);
-        console.log("Successfully pre-generated audio");
+        setNextAlignment(response.alignment);
       } catch (error) {
         console.error("Failed to pre-generate audio:", error);
-        hasPreGeneratedRef.current = false; // Reset on error
+        hasPreGeneratedRef.current = false;
         setHasPreGenerated(false);
       }
     }
@@ -322,10 +480,8 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({
       }`}
     >
       <div className="bg-amber-50/95 backdrop-blur-xl rounded-2xl shadow-xl border border-amber-200/50 overflow-hidden">
-        {/* Compact Mode */}
         {!isExpanded && (
           <div className="flex flex-col items-center p-5 space-y-3">
-            {/* Reading Icon */}
             <div className="w-10 h-10 bg-amber-100 rounded-xl flex items-center justify-center shadow-sm">
               <svg
                 className="w-6 h-6 text-amber-700"
@@ -336,12 +492,16 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({
               </svg>
             </div>
 
-            {/* Time Display */}
             <div className="text-amber-800 text-xs font-mono bg-amber-100/50 px-2 py-1 rounded-lg">
               {formatTime(currentTime)}
             </div>
 
-            {/* Play/Pause Button */}
+            {playbackRate !== 1 && (
+              <div className="text-amber-800 text-xs font-bold bg-amber-200 px-2 py-1 rounded-lg">
+                {playbackRate}x
+              </div>
+            )}
+
             <button
               onClick={handlePlay}
               disabled={isLoading}
@@ -368,7 +528,6 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({
               )}
             </button>
 
-            {/* Sound Wave Animation */}
             <div className="flex items-end space-x-1 h-6">
               {[...Array(5)].map((_, i) => (
                 <div
@@ -384,7 +543,6 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({
               ))}
             </div>
 
-            {/* Expand Button */}
             <button
               onClick={() => setIsExpanded(true)}
               className="w-10 h-10 bg-amber-200/50 hover:bg-amber-200 rounded-xl flex items-center justify-center transition-colors"
@@ -404,7 +562,6 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({
               </svg>
             </button>
 
-            {/* Bookmark Button */}
             <button className="w-10 h-10 bg-amber-200/50 hover:bg-amber-200 rounded-xl flex items-center justify-center transition-colors">
               <svg
                 className="w-5 h-5 text-amber-700"
@@ -421,7 +578,6 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({
               </svg>
             </button>
 
-            {/* Close Button */}
             <button
               onClick={onClose}
               className="w-10 h-10 bg-red-100/50 hover:bg-red-100 rounded-xl flex items-center justify-center transition-colors"
@@ -443,10 +599,8 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({
           </div>
         )}
 
-        {/* Expanded Mode */}
         {isExpanded && (
           <div className="p-6">
-            {/* Header */}
             <div className="flex items-center justify-between mb-6">
               <div className="flex items-center space-x-3">
                 <div className="w-12 h-12 bg-amber-100 rounded-2xl flex items-center justify-center shadow-sm">
@@ -487,7 +641,6 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({
               </button>
             </div>
 
-            {/* Progress Bar */}
             <div className="mb-6">
               <div className="flex justify-between text-xs text-amber-700 mb-3">
                 <span className="bg-amber-100/50 px-2 py-1 rounded">
@@ -516,8 +669,22 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({
               </div>
             </div>
 
-            {/* Controls */}
             <div className="flex items-center justify-center space-x-4 mb-6">
+              <button
+                onClick={handleSkipBackward}
+                disabled={!currentAudio}
+                className="w-14 h-12 bg-amber-200/50 hover:bg-amber-200 rounded-xl flex flex-col items-center justify-center transition-colors disabled:opacity-50"
+              >
+                <svg
+                  className="w-5 h-5 text-amber-700"
+                  fill="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path d="M11.5,12L20,18V6M11,18V6L2.5,12L11,18Z" />
+                </svg>
+                <span className="text-xs text-amber-700 font-semibold">15</span>
+              </button>
+
               <button
                 onClick={handleStop}
                 className="w-12 h-12 bg-amber-200/50 hover:bg-amber-200 rounded-xl flex items-center justify-center transition-colors"
@@ -556,9 +723,23 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({
                   </svg>
                 )}
               </button>
+
+              <button
+                onClick={handleSkipForward}
+                disabled={!currentAudio}
+                className="w-14 h-12 bg-amber-200/50 hover:bg-amber-200 rounded-xl flex flex-col items-center justify-center transition-colors disabled:opacity-50"
+              >
+                <svg
+                  className="w-5 h-5 text-amber-700"
+                  fill="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path d="M13,6V18L21.5,12M4,18L12.5,12L4,6V18Z" />
+                </svg>
+                <span className="text-xs text-amber-700 font-semibold">15</span>
+              </button>
             </div>
 
-            {/* Volume Control */}
             <div className="mb-6">
               <label className="text-amber-700 text-sm font-medium mb-2 block">
                 Volume
@@ -601,7 +782,45 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({
               </div>
             </div>
 
-            {/* Close Button */}
+            <div className="mb-6">
+              <label className="text-amber-700 text-sm font-medium mb-2 block">
+                Playback Speed
+              </label>
+              <div className="flex items-center space-x-3">
+                <svg
+                  className="w-5 h-5 text-amber-600"
+                  fill="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path d="M13,2.03V2.05L13,4.05C17.39,4.59 20.5,8.58 19.96,12.97C19.5,16.61 16.64,19.5 13,19.93V21.93C18.5,21.38 22.5,16.5 21.95,11C21.5,6.25 17.73,2.5 13,2.03M11,2.06C9.05,2.25 7.19,3 5.67,4.26L7.1,5.74C8.22,4.84 9.57,4.26 11,4.06V2.06M4.26,5.67C3,7.19 2.25,9.04 2.05,11H4.05C4.24,9.58 4.8,8.23 5.69,7.1L4.26,5.67M2.06,13C2.26,14.96 3.03,16.81 4.27,18.33L5.69,16.9C4.81,15.77 4.24,14.42 4.06,13H2.06M7.1,18.37L5.67,19.74C7.18,21 9.04,21.79 11,22V20C9.58,19.82 8.23,19.25 7.1,18.37M12.5,7V12.25L17,14.92L16.25,16.15L11,13V7H12.5Z" />
+                </svg>
+                <div className="flex-1 relative">
+                  <input
+                    type="range"
+                    min="0.5"
+                    max="2"
+                    step="0.25"
+                    value={playbackRate}
+                    onChange={(e) => {
+                      const newRate = parseFloat(e.target.value);
+                      handlePlaybackRateChange(newRate);
+                    }}
+                    className="w-full h-2 bg-amber-200/50 rounded-lg appearance-none cursor-pointer shadow-inner"
+                    style={{
+                      background: `linear-gradient(to right, #d97706 0%, #d97706 ${
+                        ((playbackRate - 0.5) / 1.5) * 100
+                      }%, rgb(251 191 36 / 0.5) ${
+                        ((playbackRate - 0.5) / 1.5) * 100
+                      }%, rgb(251 191 36 / 0.5) 100%)`,
+                    }}
+                  />
+                </div>
+                <span className="text-amber-700 text-sm min-w-[3rem]">
+                  {playbackRate}x
+                </span>
+              </div>
+            </div>
+
             <button
               onClick={onClose}
               className="w-full bg-red-100/50 hover:bg-red-100 text-red-700 rounded-xl py-3 transition-colors flex items-center justify-center space-x-2 border border-red-200/50"
