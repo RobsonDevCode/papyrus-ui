@@ -1,6 +1,7 @@
 import axios from "axios";
 import type { ApiConfig } from "./models/ApiConfig";
 import type { CreateAudioBookRequest } from "./models/CreateAudioBookRequest";
+import type { AudioWithAlignment } from "./models/AudioWithAlignment";
 
 class AudioService {
   private axiosInstance;
@@ -14,14 +15,10 @@ class AudioService {
     });
   }
 
-  async createAudio(request: CreateAudioBookRequest): Promise<string> {
-    console.log(request);
-    const response = await this.axiosInstance.post<Blob>(
+  async createAudio(request: CreateAudioBookRequest): Promise<AudioWithAlignment> {
+    const response = await this.axiosInstance.post<AudioWithAlignment>(
       `text-to-speech`,
       request,
-      {
-        responseType: "blob",
-      }
     );
 
     if (response.status !== 200) {
@@ -30,7 +27,8 @@ class AudioService {
       );
     }
 
-    return URL.createObjectURL(response.data);
+    console.log(response.data);
+    return response.data;
   }
 }
 
