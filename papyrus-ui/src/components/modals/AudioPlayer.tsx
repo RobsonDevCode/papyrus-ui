@@ -67,6 +67,7 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({
   const currentRightPageRef = useRef(currentRightPage);
   const shouldContinuePlaying = useRef<boolean>(false);
   const previousCharIndexRef = useRef(-1);
+  const isAutoAdvancingRef = useRef(false);
 
   useEffect(() => {
     return () => {
@@ -125,7 +126,6 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({
     }> = [];
     let charCount = 0;
 
-
     for (const alignment of currentAlignment) {
       if (
         !alignment?.characters?.length ||
@@ -158,9 +158,6 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({
       return;
     }
 
-    // No normalization needed! 
-    // audio.currentTime already advances at the playback rate
-    // and alignment data is based on the same timeline
     let charIndex = lastValidCharIndexRef.current;
 
     for (const timing of timingData) {
@@ -171,7 +168,6 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({
       if (currentTime > timing.endTime) {
         lastValidCharIndexRef.current = timing.charIndex;
       }
-    }
 
     if (charIndex !== previousCharIndexRef.current) {
       if (previousCharIndexRef.current !== -1 && onHighlightText) {
@@ -184,8 +180,103 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({
 
       previousCharIndexRef.current = charIndex;
     }
+    }
+
   }, [currentTime, isPlaying, onHighlightText, timingData]);
 
+ useEffect(() => {
+  // Skip if this is an auto-advance from handleAudioEnd
+  if (isAutoAdvancingRef.current) {
+    isAutoAdvancingRef.current = false;
+    return;
+  }
+
+  // This is a manual page change - check if audio was playing
+  const wasPlaying = shouldContinuePlaying.current;
+
+  // Clear highlighting from previous page
+  if (previousCharIndexRef.current !== -1 && onHighlightText) {
+    onHighlightText(previousCharIndexRef.current, false);
+    previousCharIndexRef.current = -1;
+    lastValidCharIndexRef.current = -1;
+  }
+
+  // Stop and clear current audio
+  if (currentAudio) {
+    currentAudio.pause();
+    currentAudio.src = "";
+    setCurrentAudio(null);
+  }
+
+  // Clear pre-generated audio
+  if (nextAudio) {
+    nextAudio.pause();
+    nextAudio.src = "";
+    setNextAudio(null);
+  }
+
+  // Reset states
+  setCurrentTime(0);
+  setDuration(0);
+  setIsPlaying(false);
+  setHasPreGenerated(false);
+  hasPreGeneratedRef.current = false;
+  setCurrentAlignment(null);
+  setNextAlignment(null);
+
+  // If audio was playing before the manual navigation, generate and play audio for new pages
+  if (wasPlaying) {
+    const regenerateAndPlay = async () => {
+      try {
+        setIsLoading(true);
+        shouldContinuePlaying.current = true;
+        
+        const text = await onGetPageText(currentLeftPage, currentRightPage);
+        const audioRequest = {
+          ...request,
+          text,
+          pages: [currentLeftPage, currentRightPage],
+        };
+
+        const response = await audioApi.createAudio(audioRequest);
+        const audio = new Audio(response.audioUrl);
+        audio.volume = volume;
+        audio.playbackRate = playbackRate;
+        
+        setCurrentAudio(audio);
+        setCurrentAlignment(response.alignment);
+        audioRef.current = audio;
+
+        audio.onloadedmetadata = () => {
+          setDuration(audio.duration);
+          setIsLoading(false);
+        };
+
+        audio.ontimeupdate = () => {
+          setCurrentTime(audio.currentTime);
+
+          if (audio.duration && audio.currentTime / audio.duration > 0.6) {
+            preGenerateNextPages();
+          }
+        };
+
+        audio.onended = () => {
+          handleAudioEnd();
+        };
+
+        await audio.play();
+        setIsPlaying(true);
+      } catch (error) {
+        console.error("Error regenerating audio after manual navigation:", error);
+        setIsLoading(false);
+        shouldContinuePlaying.current = false;
+        setIsPlaying(false);
+      }
+    };
+
+    regenerateAndPlay();
+  }
+}, [currentLeftPage, currentRightPage]);
 
   const generateAudio = async (): Promise<AudioWithAlignment> => {
     setIsLoading(true);
@@ -218,20 +309,6 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({
       if (!isPlaying && !currentAudio) {
         shouldContinuePlaying.current = true;
         const audioData = await generateAudio();
-
-        const alignmentText = audioData.alignment
-          ?.map((chunk) => chunk.characters.join(""))
-          .join(" ");
-
-        const text = await getPageText(currentLeftPage, currentRightPage);
-
-        console.log("Alignment vs Elements:", {
-          alignmentLength: alignmentText?.length || 0,
-          elementsLength: text.length,
-          alignmentStart: alignmentText?.substring(0, 100),
-          elementsStart: text.substring(0, 100),
-          match: alignmentText === text,
-        });
 
         const audio = new Audio(audioData.audioUrl);
         audio.volume = volume;
@@ -290,6 +367,7 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({
     const nextRightPage = currentRightPageRef.current + 2;
 
     if (nextLeftPage <= totalPages) {
+       isAutoAdvancingRef.current = true;
       onPageChange(nextLeftPage);
 
       if (currentAudio) {
@@ -799,7 +877,7 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({
                     type="range"
                     min="0.5"
                     max="2"
-                    step="0.25"
+                    step="0.01"
                     value={playbackRate}
                     onChange={(e) => {
                       const newRate = parseFloat(e.target.value);

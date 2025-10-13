@@ -281,8 +281,8 @@ const BookReader: React.FC = () => {
       }
     }
 
-    const leftText = leftElements.map(el => el.text).join(' ');
-    const rightText = rightElements.map(el => el.text).join(' ');
+    const leftText = leftElements.map(el => el.text).join('');
+    const rightText = rightElements.map(el => el.text).join('');
 
     return `${leftText} ${rightText}`;
   };
@@ -587,37 +587,61 @@ const BookReader: React.FC = () => {
 
 const handleHighlightText = (charIndex: number, isActive: boolean) => {
   let cumulativeIndex = 0;
+  let targetElement: TextElement | null = null;
   
+  // First, find which element contains this character
   for (const textElement of textElements) {
     const textLength = textElement.text.length;
     
     if (charIndex >= cumulativeIndex && charIndex < cumulativeIndex + textLength) {
-      if (isActive) {
-        // Add blue translucent highlight
-        textElement.element.classList.add(
-          'bg-blue-400/40',
-          'shadow-lg',
-          'shadow-blue-300/30',
-          'scale-105'
-        );
-        
-        textElement.element.scrollIntoView({
-          behavior: 'smooth',
-          block: 'center',
-          inline: 'nearest'
-        });
-      } else {
-        textElement.element.classList.remove(
-          'bg-blue-400/40',
-          'shadow-lg',
-          'shadow-blue-300/30',
-          'scale-105'
-        );
-      }
+      targetElement = textElement;
       break;
     }
     
     cumulativeIndex += textLength;
+  }
+
+  if (!targetElement) return;
+
+  if (isActive) {
+    // Get the Y position and page number of the target element
+    const targetTop = parseFloat(targetElement.element.style.top);
+    const targetPage = targetElement.pageNumber;
+    const tolerance = 2; // pixels tolerance for same line detection
+
+    // Find all elements on the same line AND same page
+    const elementsOnSameLine = textElements.filter(te => {
+      const elementTop = parseFloat(te.element.style.top);
+      return Math.abs(elementTop - targetTop) <= tolerance && 
+             te.pageNumber === targetPage;  // ← Add page check
+    });
+
+    // Highlight all elements on this line
+    elementsOnSameLine.forEach(te => {
+      te.element.classList.add(
+        'bg-blue-400/40',
+        'shadow-lg',
+        'shadow-blue-300/30',
+        'scale-105'
+      );
+    });
+
+    // Scroll the target element into view
+    targetElement.element.scrollIntoView({
+      behavior: 'smooth',
+      block: 'center',
+      inline: 'nearest'
+    });
+  } else {
+    // Remove highlight from all elements
+    textElements.forEach(te => {
+      te.element.classList.remove(
+        'bg-blue-400/40',
+        'shadow-lg',
+        'shadow-blue-300/30',
+        'scale-105'
+      );
+    });
   }
 };
 
