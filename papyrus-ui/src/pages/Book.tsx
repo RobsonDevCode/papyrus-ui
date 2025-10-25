@@ -95,6 +95,8 @@ const BookReader: React.FC = () => {
   const [hasAudioSettings, setHasAudioSettings] = useState(false);
   const [audioSettings, setAudioSettings] = useState<AudioSettings>();
   const [hasCheckedBookmark, setHasCheckedBookMark] = useState(false);
+  
+  const renderTasksRef = useRef<{ [key: string]: any }>({});
 
   const [readerState, setReaderState] = useState<ReaderState>({
     leftPageNumber: 1,
@@ -110,6 +112,7 @@ const BookReader: React.FC = () => {
   });
 
   const location = useLocation();
+  const userId = location.state?.userId;
   const name = location.state?.name;
   const author = location.state?.author;
 
@@ -131,13 +134,13 @@ const BookReader: React.FC = () => {
     };
   }, []);
 
-  const fetchPages = async (documentGroupId: string): Promise<ArrayBuffer> => {
+  const fetchPages = async (documentGroupId: string, userId: string): Promise<ArrayBuffer> => {
     try {
       const request: FetchPagesRequest = {
         documentGroupId: documentGroupId,
       };
 
-      const response = await pagesApi.getPages(request);
+      const response = await pagesApi.getPages(request, userId);
       return response;
     } catch (error) {
       throw new Error("Failed to get PDF document");
@@ -165,7 +168,7 @@ const BookReader: React.FC = () => {
 
   const checkAudioSettings = async () => {
     try {
-      const audioSettings = await audioSettingsRetrievalApi.getAudioSettings();
+      const audioSettings = await audioSettingsRetrievalApi.getAudioSettings(userId);
       if (audioSettings && audioSettings.voiceId) {
         setAudioSettings(audioSettings);
         setHasAudioSettings(true);
@@ -297,6 +300,13 @@ const BookReader: React.FC = () => {
     if (!canvas || pageNumber > pdf.numPages || pageNumber < 1) return [];
 
     try {
+      const canvasId = canvas === leftCanvasRef.current ? 'left' : 'right';
+      
+      // Cancel any existing render task for this canvas
+      if (renderTasksRef.current[canvasId]) {
+        renderTasksRef.current[canvasId].cancel();
+      }
+
       const page = await pdf.getPage(pageNumber);
       const context = canvas.getContext("2d");
       if (!context) return [];
@@ -310,14 +320,27 @@ const BookReader: React.FC = () => {
         viewport: viewport,
       };
 
-      await page.render(renderContext).promise;
+      // Store the render task so we can cancel it if needed
+      const renderTask = page.render(renderContext);
+      renderTasksRef.current[canvasId] = renderTask;
+
+      await renderTask.promise;
+      
+      // Clear the stored task after successful render
+      renderTasksRef.current[canvasId] = null;
 
       if (textLayer) {
         return await renderTextLayer(pdf, pageNumber, textLayer, viewport);
       }
 
       return [];
-    } catch (error) {
+    } catch (error: any) {
+      // Ignore cancellation errors - they're expected
+      if (error?.name === 'RenderingCancelledException') {
+        console.log(`Render cancelled for page ${pageNumber}`);
+        return [];
+      }
+      
       console.error(`Error rendering page ${pageNumber}:`, error);
       // Clear canvas on error
       const context = canvas.getContext("2d");
@@ -328,16 +351,20 @@ const BookReader: React.FC = () => {
     }
   };
 
-  const loadPDF = async (documentGroupId: string) => {
+  const loadPDF = async (documentGroupId: string | null, userId: string | null) => {
     if (!documentGroupId) {
       console.error("Document group ID is null");
+      return;
+    }
+    if(!userId){
+      console.error("user id is null");
       return;
     }
 
     setReaderState((prev) => ({ ...prev, isLoading: true, error: null }));
 
     try {
-      const pdfArrayBufferPromise = fetchPages(documentGroupId);
+      const pdfArrayBufferPromise = fetchPages(documentGroupId, userId);
       const bookmarkPromise = fetchBookmark(documentGroupId);
 
       const [pdfArrayBuffer, bookmark] = await Promise.all([
@@ -352,31 +379,16 @@ const BookReader: React.FC = () => {
       setReaderState((prev) => ({
         ...prev,
         totalPages: pdf.numPages,
+        leftPageNumber: bookmark.page,
+        rightPageNumber: bookmark.page + 1,
         documentName: name ?? "Name not found",
         author: author ?? "Author not found",
         isLoading: false,
       }));
 
-      // Render initial pages with current scale
-      if (leftCanvasRef.current) {
-        renderPDFPage(
-          pdf,
-          bookmark.page,
-          leftCanvasRef.current,
-          readerState.scale,
-          leftTextLayerRef.current || undefined
-        );
-      }
+      // Pages will be rendered automatically by the useEffect that watches page numbers
+      // No manual rendering needed here - this fixes the page flip issue on load
 
-      if (rightCanvasRef.current && pdf.numPages > 1) {
-        renderPDFPage(
-          pdf,
-          bookmark.page + 1,
-          rightCanvasRef.current,
-          readerState.scale,
-          rightTextLayerRef.current || undefined
-        );
-      }
     } catch (error) {
       setReaderState((prev) => ({
         ...prev,
@@ -519,7 +531,8 @@ const BookReader: React.FC = () => {
   useEffect(() => {
     const initializeReader = async () => {
       try {
-        await loadPDF(documentGroupId!);
+        console.log(userId);
+        await loadPDF(documentGroupId!, userId);
         await checkAudioSettings();
       } catch (error) {
         setReaderState((prev) => ({
@@ -575,7 +588,7 @@ const BookReader: React.FC = () => {
     try {
       await audioSettingsUploadApi.createAudioSettings(config);
       const newAudioSettings =
-        await audioSettingsRetrievalApi.getAudioSettings();
+        await audioSettingsRetrievalApi.getAudioSettings(userId);
       setAudioSettings(newAudioSettings);
       setHasAudioSettings(true);
       setIsAudioPlayerVisible(true);
@@ -658,7 +671,8 @@ const handleHighlightText = (charIndex: number, isActive: boolean) => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             <div className="flex items-center space-x-4">
-              <Button variant="ghost" size="sm" to="/library">
+              <Button variant="ghost" size="sm" to="/library"
+              state={{userId: userId}}>
                 ← Library
               </Button>
               <div>

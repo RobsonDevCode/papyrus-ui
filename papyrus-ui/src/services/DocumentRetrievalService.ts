@@ -2,20 +2,11 @@ import axios from "axios";
 import type { ApiConfig } from "./models/ApiConfig";
 import type { PagedResponse } from "./models/PagedResponse";
 import type { BookDocument } from "./models/BookDocument";
+import axiosInstance from "./AxiosInterceptor";
 
 class DocumentRetrievalApiService {
-  private axiosInstance;
-  constructor(config: ApiConfig) {
-    this.axiosInstance = axios.create({
-      baseURL: config.baseUrl,
-      timeout: config.timeout || 30000,
-      headers: {
-        ...config.headers,
-      },
-    });
-  }
-
   async getBooks(
+    userId: string,
     page: number,
     size: number,
     searchTerm?: string
@@ -33,9 +24,9 @@ class DocumentRetrievalApiService {
         await new Promise((resolve) => setTimeout(resolve, jitter));
       }
 
-      const response = await this.axiosInstance.get<
+      const response = await axiosInstance.get<
         PagedResponse<BookDocument>
-      >(`document?${params}`, {
+      >(`document/${userId}?${params}`, {
         headers: { Accept: "application/json" },
       });
 
@@ -57,7 +48,4 @@ class DocumentRetrievalApiService {
   }
 }
 
-export const documentApi = new DocumentRetrievalApiService({
-  baseUrl: import.meta.env.VITE_PAPYRUS_BASE_URL,
-  timeout: 30000,
-});
+export const documentApi = new DocumentRetrievalApiService();

@@ -4,6 +4,7 @@ import type { CreateAudioBookRequest } from "../../services/models/CreateAudioBo
 import type { VoiceSettings } from "../../services/models/VoiceSettings";
 import type { AlignmentData } from "../../services/models/AlignmentData";
 import type { AudioWithAlignment } from "../../services/models/AudioWithAlignment";
+import { useLocation } from "react-router-dom";
 
 interface AudioPlayerProps {
   isVisible: boolean;
@@ -52,8 +53,11 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({
   );
   const lastValidCharIndexRef = useRef(-1);
 
+  const location = useLocation();
+  const userId = location.state?.userId || localStorage.getItem("userId");
   const [request, setRequest] = useState<CreateAudioBookRequest>({
     documentGroupId: documentId,
+    userId: userId,
     voiceId: voiceId,
     pages: [currentLeftPage, currentRightPage],
     settings: voiceSettings,
@@ -169,114 +173,116 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({
         lastValidCharIndexRef.current = timing.charIndex;
       }
 
-    if (charIndex !== previousCharIndexRef.current) {
-      if (previousCharIndexRef.current !== -1 && onHighlightText) {
-        onHighlightText(previousCharIndexRef.current, false);
+      if (charIndex !== previousCharIndexRef.current) {
+        if (previousCharIndexRef.current !== -1 && onHighlightText) {
+          onHighlightText(previousCharIndexRef.current, false);
+        }
+
+        if (charIndex !== -1 && onHighlightText) {
+          onHighlightText(charIndex, true);
+        }
+
+        previousCharIndexRef.current = charIndex;
       }
-
-      if (charIndex !== -1 && onHighlightText) {
-        onHighlightText(charIndex, true);
-      }
-
-      previousCharIndexRef.current = charIndex;
     }
-    }
-
   }, [currentTime, isPlaying, onHighlightText, timingData]);
 
- useEffect(() => {
-  // Skip if this is an auto-advance from handleAudioEnd
-  if (isAutoAdvancingRef.current) {
-    isAutoAdvancingRef.current = false;
-    return;
-  }
+  useEffect(() => {
+    // Skip if this is an auto-advance from handleAudioEnd
+    if (isAutoAdvancingRef.current) {
+      isAutoAdvancingRef.current = false;
+      return;
+    }
 
-  // This is a manual page change - check if audio was playing
-  const wasPlaying = shouldContinuePlaying.current;
+    // This is a manual page change - check if audio was playing
+    const wasPlaying = shouldContinuePlaying.current;
 
-  // Clear highlighting from previous page
-  if (previousCharIndexRef.current !== -1 && onHighlightText) {
-    onHighlightText(previousCharIndexRef.current, false);
-    previousCharIndexRef.current = -1;
-    lastValidCharIndexRef.current = -1;
-  }
+    // Clear highlighting from previous page
+    if (previousCharIndexRef.current !== -1 && onHighlightText) {
+      onHighlightText(previousCharIndexRef.current, false);
+      previousCharIndexRef.current = -1;
+      lastValidCharIndexRef.current = -1;
+    }
 
-  // Stop and clear current audio
-  if (currentAudio) {
-    currentAudio.pause();
-    currentAudio.src = "";
-    setCurrentAudio(null);
-  }
+    // Stop and clear current audio
+    if (currentAudio) {
+      currentAudio.pause();
+      currentAudio.src = "";
+      setCurrentAudio(null);
+    }
 
-  // Clear pre-generated audio
-  if (nextAudio) {
-    nextAudio.pause();
-    nextAudio.src = "";
-    setNextAudio(null);
-  }
+    // Clear pre-generated audio
+    if (nextAudio) {
+      nextAudio.pause();
+      nextAudio.src = "";
+      setNextAudio(null);
+    }
 
-  // Reset states
-  setCurrentTime(0);
-  setDuration(0);
-  setIsPlaying(false);
-  setHasPreGenerated(false);
-  hasPreGeneratedRef.current = false;
-  setCurrentAlignment(null);
-  setNextAlignment(null);
+    // Reset states
+    setCurrentTime(0);
+    setDuration(0);
+    setIsPlaying(false);
+    setHasPreGenerated(false);
+    hasPreGeneratedRef.current = false;
+    setCurrentAlignment(null);
+    setNextAlignment(null);
 
-  // If audio was playing before the manual navigation, generate and play audio for new pages
-  if (wasPlaying) {
-    const regenerateAndPlay = async () => {
-      try {
-        setIsLoading(true);
-        shouldContinuePlaying.current = true;
-        
-        const text = await onGetPageText(currentLeftPage, currentRightPage);
-        const audioRequest = {
-          ...request,
-          text,
-          pages: [currentLeftPage, currentRightPage],
-        };
+    // If audio was playing before the manual navigation, generate and play audio for new pages
+    if (wasPlaying) {
+      const regenerateAndPlay = async () => {
+        try {
+          setIsLoading(true);
+          shouldContinuePlaying.current = true;
 
-        const response = await audioApi.createAudio(audioRequest);
-        const audio = new Audio(response.audioUrl);
-        audio.volume = volume;
-        audio.playbackRate = playbackRate;
-        
-        setCurrentAudio(audio);
-        setCurrentAlignment(response.alignment);
-        audioRef.current = audio;
+          const text = await onGetPageText(currentLeftPage, currentRightPage);
+          const audioRequest = {
+            ...request,
+            text,
+            pages: [currentLeftPage, currentRightPage],
+          };
 
-        audio.onloadedmetadata = () => {
-          setDuration(audio.duration);
+          const response = await audioApi.createAudio(audioRequest);
+          const audio = new Audio(response.audioUrl);
+          audio.volume = volume;
+          audio.playbackRate = playbackRate;
+
+          setCurrentAudio(audio);
+          setCurrentAlignment(response.alignment);
+          audioRef.current = audio;
+
+          audio.onloadedmetadata = () => {
+            setDuration(audio.duration);
+            setIsLoading(false);
+          };
+
+          audio.ontimeupdate = () => {
+            setCurrentTime(audio.currentTime);
+
+            if (audio.duration && audio.currentTime / audio.duration > 0.6) {
+              preGenerateNextPages();
+            }
+          };
+
+          audio.onended = () => {
+            handleAudioEnd();
+          };
+
+          await audio.play();
+          setIsPlaying(true);
+        } catch (error) {
+          console.error(
+            "Error regenerating audio after manual navigation:",
+            error
+          );
           setIsLoading(false);
-        };
+          shouldContinuePlaying.current = false;
+          setIsPlaying(false);
+        }
+      };
 
-        audio.ontimeupdate = () => {
-          setCurrentTime(audio.currentTime);
-
-          if (audio.duration && audio.currentTime / audio.duration > 0.6) {
-            preGenerateNextPages();
-          }
-        };
-
-        audio.onended = () => {
-          handleAudioEnd();
-        };
-
-        await audio.play();
-        setIsPlaying(true);
-      } catch (error) {
-        console.error("Error regenerating audio after manual navigation:", error);
-        setIsLoading(false);
-        shouldContinuePlaying.current = false;
-        setIsPlaying(false);
-      }
-    };
-
-    regenerateAndPlay();
-  }
-}, [currentLeftPage, currentRightPage]);
+      regenerateAndPlay();
+    }
+  }, [currentLeftPage, currentRightPage]);
 
   const generateAudio = async (): Promise<AudioWithAlignment> => {
     setIsLoading(true);
@@ -367,7 +373,7 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({
     const nextRightPage = currentRightPageRef.current + 2;
 
     if (nextLeftPage <= totalPages) {
-       isAutoAdvancingRef.current = true;
+      isAutoAdvancingRef.current = true;
       onPageChange(nextLeftPage);
 
       if (currentAudio) {

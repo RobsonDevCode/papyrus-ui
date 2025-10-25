@@ -7,6 +7,7 @@ import { voiceRetrievalApi } from "../../services/VoiceRetrievalService";
 import type { Paginiation } from "../../services/models/Pagination";
 import Dropdown from "../common/Dropdown";
 import type { SetUpAudioSettingsRequest } from "../../services/models/SetUpAudioSettingsRequest";
+import { useLocation } from "react-router-dom";
 
 
 
@@ -55,6 +56,9 @@ const AIReadingModal: React.FC<AIReadingModalProps> = ({
   const selectedCategory = filter.useCase || "all";
   const selectedAccent = filter.accent || "all";
   const selectedGender = filter.gender || "all";
+   
+  const location = useLocation();
+  const userId = location.state?.userId || localStorage.getItem('userId');
 
   const formatCategoryName = (category: string): string => {
     if (category === "all") return "All Categories";
@@ -245,6 +249,7 @@ const AIReadingModal: React.FC<AIReadingModalProps> = ({
 
     const config: SetUpAudioSettingsRequest = {
       id: documentId,
+      userId: userId,
       voiceId: selectedVoiceId,
       voiceSettings: voiceSettings,
     };

@@ -12,6 +12,7 @@ interface ButtonProps {
   state?: any;
   disabled?: boolean;
   className?: string;
+  type?: 'button' | 'submit' | 'reset';
 }
 
 const Button: React.FC<ButtonProps> = ({
@@ -24,6 +25,7 @@ const Button: React.FC<ButtonProps> = ({
   state,
   disabled = false,
   className = '',
+  type = "button"
 }) => {
   const navigate = useNavigate();
 
@@ -71,6 +73,7 @@ const Button: React.FC<ButtonProps> = ({
       className={combinedStyles}
       onClick={handleClick}
       disabled={disabled}
+      type={type}
     >
       {children}
     </button>

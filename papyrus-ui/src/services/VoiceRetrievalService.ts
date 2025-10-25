@@ -1,27 +1,16 @@
-import type { ApiConfig } from "./models/ApiConfig";
-import axios from "axios";
 import type { VoiceRequest } from "./models/VoiceRequest";
 import type { VoiceResponse } from "./models/VoiceResponse";
+import axiosInstance from "./AxiosInterceptor";
 
 class VoiceRetrievalServcie {
-  private axiosInstance;
-  constructor(config: ApiConfig) {
-    this.axiosInstance = axios.create({
-      baseURL: config.baseUrl,
-      timeout: config.timeout || 30000,
-      headers: {
-        ...config.headers,
-      },
-    });
-  }
-
   async getVoices(request: VoiceRequest): Promise<VoiceResponse> {
     try {
       const url = await this.buildQuery(request);
       console.log(url);
-      const response = await this.axiosInstance.get<VoiceResponse>(url, {
+      const response = await axiosInstance.get<VoiceResponse>(url, {
         headers: { Accept: "application/json" },
       });
+
 
       if (response.status != 200) {
         throw new Error(
@@ -67,7 +56,4 @@ class VoiceRetrievalServcie {
 }
 
 
-export const voiceRetrievalApi = new VoiceRetrievalServcie({
-   baseUrl: import.meta.env.VITE_PAPYRUS_BASE_URL,
-  timeout: 30000,
-});
+export const voiceRetrievalApi = new VoiceRetrievalServcie();
