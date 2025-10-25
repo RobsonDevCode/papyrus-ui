@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
 import Button from "../components/common/Button";
-import ZoomModal from "../components/zoom/ZoomModal";
 import { pagesApi, type FetchPagesRequest } from "../services/PageService";
 import { useLocation, useParams } from "react-router-dom";
 import type { Bookmark } from "../services/models/Bookmark";
@@ -23,6 +22,10 @@ interface ReaderState {
   fontSize: number;
   zoomedImage: string | null;
   scale: number;
+  leftPageZoom: number;
+  rightPageZoom: number;
+  leftPagePan: { x: number; y: number };
+  rightPagePan: { x: number; y: number };
 }
 
 interface PDFDocument {
@@ -83,7 +86,6 @@ declare global {
 
 const BookReader: React.FC = () => {
   const { documentGroupId } = useParams<{ documentGroupId: string }>();
-  const [pageZoomNumber, setPageToZoom] = useState<number>(0);
   const leftCanvasRef = useRef<HTMLCanvasElement>(null);
   const rightCanvasRef = useRef<HTMLCanvasElement>(null);
   const leftTextLayerRef = useRef<HTMLDivElement>(null);
@@ -95,7 +97,16 @@ const BookReader: React.FC = () => {
   const [hasAudioSettings, setHasAudioSettings] = useState(false);
   const [audioSettings, setAudioSettings] = useState<AudioSettings>();
   const [hasCheckedBookmark, setHasCheckedBookMark] = useState(false);
-  
+ 
+  // Drag state for pan functionality
+  const [isDragging, setIsDragging] = useState<'left' | 'right' | null>(null);
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+
+  const MIN_ZOOM = 1;
+  const MAX_ZOOM = 2;
+  const DEFAULT_ZOOM = 1;
+  const ZOOM_STEP = 0.25;
+
   const renderTasksRef = useRef<{ [key: string]: any }>({});
 
   const [readerState, setReaderState] = useState<ReaderState>({
@@ -109,6 +120,10 @@ const BookReader: React.FC = () => {
     fontSize: 14,
     zoomedImage: null,
     scale: 1.0,
+    leftPageZoom: DEFAULT_ZOOM,
+    rightPageZoom: DEFAULT_ZOOM,
+    leftPagePan: { x: 0, y: 0 },
+    rightPagePan: { x: 0, y: 0 },
   });
 
   const location = useLocation();
@@ -180,6 +195,104 @@ const BookReader: React.FC = () => {
     }
   };
 
+
+  const handleZoomIn = (page: 'left' | 'right') => {
+    setReaderState(prev => {
+      const currentZoom = page === 'left' ? prev.leftPageZoom : prev.rightPageZoom;
+      const newZoom = Math.min(currentZoom + ZOOM_STEP, MAX_ZOOM);
+
+      return {
+        ...prev,
+        [page == 'left' ? 'leftPageZoom' : 'rightPageZoom']: newZoom
+      };
+    });
+  }
+
+  const handleZoomOut = (page: 'left' | 'right') => {
+    setReaderState(prev => {
+      const currentZoom = page === 'left' ? prev.leftPageZoom : prev.rightPageZoom;
+      const newZoom = Math.max(currentZoom - ZOOM_STEP, MIN_ZOOM);
+
+      // Reset pan when zooming out to 1x
+      if (newZoom === MIN_ZOOM) {
+        return {
+          ...prev,
+          [page === 'left' ? 'leftPageZoom' : 'rightPageZoom']: newZoom,
+          [page === 'left' ? 'leftPagePan' : 'rightPagePan']: { x: 0, y: 0 }
+        };
+      }
+
+      return {
+        ...prev,
+        [page == 'left' ? 'leftPageZoom' : 'rightPageZoom']: newZoom
+      };
+    });
+  }
+
+const resetZoom = (page: 'left' | 'right') => {
+    setReaderState(prev => ({
+      ...prev,
+      [page === 'left' ? 'leftPageZoom' : 'rightPageZoom']: DEFAULT_ZOOM,
+      [page === 'left' ? 'leftPagePan' : 'rightPagePan']: { x: 0, y: 0 }
+    }));
+  };
+
+  // Drag handlers for pan
+  const handleMouseDown = (e: React.MouseEvent, page: 'left' | 'right') => {
+    const zoom = page === 'left' ? readerState.leftPageZoom : readerState.rightPageZoom;
+    
+    // Only enable dragging if zoomed in
+    if (zoom <= 1) return;
+
+    e.preventDefault();
+    setIsDragging(page);
+    setDragStart({ x: e.clientX, y: e.clientY });
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (!isDragging) return;
+
+    const deltaX = e.clientX - dragStart.x;
+    const deltaY = e.clientY - dragStart.y;
+
+    setReaderState(prev => {
+      const panKey = isDragging === 'left' ? 'leftPagePan' : 'rightPagePan';
+      const currentPan = prev[panKey];
+
+      return {
+        ...prev,
+        [panKey]: {
+          x: currentPan.x + deltaX,
+          y: currentPan.y + deltaY
+        }
+      };
+    });
+
+    setDragStart({ x: e.clientX, y: e.clientY });
+  };
+
+  const handleMouseUp = () => {
+    setIsDragging(null);
+  };
+
+  // Add global mouse up listener
+  useEffect(() => {
+    const handleGlobalMouseUp = () => {
+      setIsDragging(null);
+    };
+
+    if (isDragging) {
+      window.addEventListener('mouseup', handleGlobalMouseUp);
+      window.addEventListener('mouseleave', handleGlobalMouseUp);
+    }
+
+    return () => {
+      window.removeEventListener('mouseup', handleGlobalMouseUp);
+      window.removeEventListener('mouseleave', handleGlobalMouseUp);
+    };
+  }, [isDragging]);
+
+  
   const renderTextLayer = async (
     pdf: PDFDocument,
     pageNumber: number,
@@ -386,9 +499,6 @@ const BookReader: React.FC = () => {
         isLoading: false,
       }));
 
-      // Pages will be rendered automatically by the useEffect that watches page numbers
-      // No manual rendering needed here - this fixes the page flip issue on load
-
     } catch (error) {
       setReaderState((prev) => ({
         ...prev,
@@ -455,6 +565,10 @@ const BookReader: React.FC = () => {
         ...prev,
         leftPageNumber: nextPage,
         rightPageNumber: nextPage + 1,
+        leftPageZoom: DEFAULT_ZOOM,
+        rightPageZoom: DEFAULT_ZOOM,
+        leftPagePan: { x: 0, y: 0 },
+        rightPagePan: { x: 0, y: 0 },
       }));
     }
   };
@@ -466,6 +580,10 @@ const BookReader: React.FC = () => {
         ...prev,
         leftPageNumber: prevPage,
         rightPageNumber: prevPage + 1,
+        leftPageZoom: DEFAULT_ZOOM,
+        rightPageZoom: DEFAULT_ZOOM,
+        leftPagePan: { x: 0, y: 0 },
+        rightPagePan: { x: 0, y: 0 },
       }));
     }
   };
@@ -481,40 +599,14 @@ const BookReader: React.FC = () => {
         ...prev,
         leftPageNumber: leftPageNumber,
         rightPageNumber: leftPageNumber + 1,
+        leftPageZoom: DEFAULT_ZOOM,
+        rightPageZoom: DEFAULT_ZOOM,
+        leftPagePan: { x: 0, y: 0 },
+        rightPagePan: { x: 0, y: 0 },
       }));
     }
   };
 
-  const openImageZoom = (pageNumber: number) => {
-    if (!pdfDoc) return;
-
-    setPageToZoom(pageNumber);
-
-    // Create a temporary canvas to generate high-res image for zoom
-    const tempCanvas = document.createElement("canvas");
-    const tempContext = tempCanvas.getContext("2d");
-    if (!tempContext) return;
-
-    pdfDoc.getPage(pageNumber).then((page) => {
-      const viewport = page.getViewport({ scale: 2.0 }); // Higher resolution for zoom
-      tempCanvas.width = viewport.width;
-      tempCanvas.height = viewport.height;
-
-      const renderContext: PDFRenderContext = {
-        canvasContext: tempContext,
-        viewport: viewport,
-      };
-
-      page.render(renderContext).promise.then(() => {
-        const dataUrl = tempCanvas.toDataURL();
-        setReaderState((prev) => ({ ...prev, zoomedImage: dataUrl }));
-      });
-    });
-  };
-
-  const closeImageZoom = () => {
-    setReaderState((prev) => ({ ...prev, zoomedImage: null }));
-  };
 
   // Update pages when page numbers or scale change
   useEffect(() => {
@@ -551,7 +643,6 @@ const BookReader: React.FC = () => {
   useEffect(() => {
     const handleKeyPress = (event: KeyboardEvent) => {
       if (readerState.zoomedImage && event.key === "Escape") {
-        closeImageZoom();
         return;
       }
 
@@ -565,9 +656,6 @@ const BookReader: React.FC = () => {
         case "ArrowRight":
           event.preventDefault();
           goToNextSpread();
-          break;
-        case "Escape":
-          // Navigate back to library - implement based on your routing
           break;
       }
     };
@@ -601,7 +689,8 @@ const BookReader: React.FC = () => {
 const handleHighlightText = (charIndex: number, isActive: boolean) => {
   let cumulativeIndex = 0;
   let targetElement: TextElement | null = null;
-  
+
+
   // First, find which element contains this character
   for (const textElement of textElements) {
     const textLength = textElement.text.length;
@@ -616,6 +705,7 @@ const handleHighlightText = (charIndex: number, isActive: boolean) => {
 
   if (!targetElement) return;
 
+
   if (isActive) {
     // Get the Y position and page number of the target element
     const targetTop = parseFloat(targetElement.element.style.top);
@@ -628,6 +718,15 @@ const handleHighlightText = (charIndex: number, isActive: boolean) => {
       return Math.abs(elementTop - targetTop) <= tolerance && 
              te.pageNumber === targetPage;  // ← Add page check
     });
+
+  const targetPageNumber = targetElement.pageNumber;
+  const isTargetPageZoomed = (targetPageNumber === readerState.leftPageNumber && readerState.leftPageZoom > 1) || 
+                              (targetPageNumber === readerState.rightPageNumber && readerState.rightPageZoom > 1);
+
+  if (isTargetPageZoomed) {
+    // Don't highlight on this zoomed page, but other page can still be highlighted
+    return;
+  }
 
     // Highlight all elements on this line
     elementsOnSameLine.forEach(te => {
@@ -758,14 +857,27 @@ const handleHighlightText = (charIndex: number, isActive: boolean) => {
                       {/* Book Pages */}
                       <div className="flex gap-4">
                         {/* Left Page */}
-                        <div className="relative">
+                        <div 
+                          className="relative"
+                          onMouseDown={(e) => handleMouseDown(e, 'left')}
+                          onMouseMove={handleMouseMove}
+                          onMouseUp={handleMouseUp}
+                          style={{
+                            cursor: readerState.leftPageZoom > 1 ? (isDragging === 'left' ? 'grabbing' : 'grab') : 'pointer'
+                          }}
+                        >
                           <canvas
                             ref={leftCanvasRef}
                             className="shadow-lg border border-gray-300/50 bg-white"
-                            onClick={() =>
-                              openImageZoom(readerState.leftPageNumber)
-                            }
-                            style={{ cursor: "pointer" }}
+                            style={{ 
+                              cursor: "pointer",
+                              transform: readerState.leftPageZoom > 1 
+                                ? `scale(${readerState.leftPageZoom}) translate(${readerState.leftPagePan.x}px, ${readerState.leftPagePan.y}px)`
+                                : `scale(${readerState.leftPageZoom})`,
+                              transformOrigin: 'center',
+                              transition: isDragging === 'left' ? 'none' : 'transform 0.3s ease-in-out',
+                              pointerEvents: readerState.leftPageZoom > 1 ? 'none' : 'auto'
+                            }}
                           />
                           <div
                             ref={leftTextLayerRef}
@@ -782,21 +894,71 @@ const handleHighlightText = (charIndex: number, isActive: boolean) => {
                           <div className="absolute bottom-2 left-2 text-xs text-gray-500 bg-white/80 px-2 py-1 rounded">
                             {readerState.leftPageNumber}
                           </div>
+                          
+                           <div className="absolute top-2 right-2 flex flex-col gap-1 bg-white/90 backdrop-blur-sm rounded-lg shadow-lg p-1 z-10">
+                            <button
+                              onClick={() => handleZoomIn('left')}
+                              disabled={readerState.leftPageZoom >= MAX_ZOOM}
+                              className="p-2 hover:bg-amber-100 rounded disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                              title="Zoom In"
+                            >
+                              <svg className="w-5 h-5 text-amber-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v6m3-3H7" />
+                              </svg>
+                            </button>
+                            <button
+                              onClick={() => handleZoomOut('left')}
+                              disabled={readerState.leftPageZoom <= MIN_ZOOM}
+                              className="p-2 hover:bg-amber-100 rounded disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                              title="Zoom Out"
+                            >
+                              <svg className="w-5 h-5 text-amber-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM13 10H7" />
+                              </svg>
+                            </button>
+                            <button
+                              onClick={() => resetZoom('left')}
+                              className="p-2 hover:bg-amber-100 rounded transition-colors"
+                              title="Reset Zoom"
+                            >
+                              <svg className="w-5 h-5 text-amber-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                              </svg>
+                            </button>
+                            <div className="text-xs text-center text-amber-700 font-medium px-1 py-1">
+                              {Math.round(readerState.leftPageZoom * 100)}%
+                            </div>
+                          </div>
                         </div>
 
                         {/* Center Gutter/Spine */}
                         <div className="w-4 bg-gradient-to-r from-black via-black to-black/10 rounded-sm"></div>
 
                         {/* Right Page */}
-                        <div className="relative">
+                        <div 
+                          className="relative"
+                          onMouseDown={(e) => handleMouseDown(e, 'right')}
+                          onMouseMove={handleMouseMove}
+                          onMouseUp={handleMouseUp}
+                          style={{
+                            cursor: readerState.rightPageZoom > 1 ? (isDragging === 'right' ? 'grabbing' : 'grab') : 'pointer'
+                          }}
+                        >
                           {hasRightPage ? (
                             <>
                               <div>
                                 <canvas
                                   ref={rightCanvasRef}
                                   className="shadow-lg border border-gray-300/50 bg-white"
-                                  onClick={() => openImageZoom(rightPageNumber)}
-                                  style={{ cursor: "pointer" }}
+                                  style={{ 
+                                    cursor: "pointer",
+                                    transform: readerState.rightPageZoom > 1
+                                      ? `scale(${readerState.rightPageZoom}) translate(${readerState.rightPagePan.x}px, ${readerState.rightPagePan.y}px)`
+                                      : `scale(${readerState.rightPageZoom})`,
+                                    transformOrigin: 'center',
+                                    transition: isDragging === 'right' ? 'none' : 'transform 0.3s ease-in-out',
+                                    pointerEvents: readerState.rightPageZoom > 1 ? 'none' : 'auto'
+                                  }}
                                 />
                                 <div
                                   ref={rightTextLayerRef}
@@ -812,6 +974,42 @@ const handleHighlightText = (charIndex: number, isActive: boolean) => {
                                 {/* Page Number - Bottom Right */}
                                 <div className="absolute bottom-2 right-2 text-xs text-gray-500 bg-white/80 px-2 py-1 rounded">
                                   {rightPageNumber}
+                                </div>
+                              </div>
+                              
+                              {/* Zoom Controls - Right Page */}
+                              <div className="absolute top-2 right-2 flex flex-col gap-1 bg-white/90 backdrop-blur-sm rounded-lg shadow-lg p-1 z-10">
+                                <button
+                                  onClick={() => handleZoomIn('right')}
+                                  disabled={readerState.rightPageZoom >= MAX_ZOOM}
+                                  className="p-2 hover:bg-amber-100 rounded disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                  title="Zoom In"
+                                >
+                                  <svg className="w-5 h-5 text-amber-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v6m3-3H7" />
+                                  </svg>
+                                </button>
+                                <button
+                                  onClick={() => handleZoomOut('right')}
+                                  disabled={readerState.rightPageZoom <= MIN_ZOOM}
+                                  className="p-2 hover:bg-amber-100 rounded disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                  title="Zoom Out"
+                                >
+                                  <svg className="w-5 h-5 text-amber-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM13 10H7" />
+                                  </svg>
+                                </button>
+                                <button
+                                  onClick={() => resetZoom('right')}
+                                  className="p-2 hover:bg-amber-100 rounded transition-colors"
+                                  title="Reset Zoom"
+                                >
+                                  <svg className="w-5 h-5 text-amber-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                  </svg>
+                                </button>
+                                <div className="text-xs text-center text-amber-700 font-medium px-1 py-1">
+                                  {Math.round(readerState.rightPageZoom * 100)}%
                                 </div>
                               </div>
                             </>
@@ -835,7 +1033,7 @@ const handleHighlightText = (charIndex: number, isActive: boolean) => {
                       {/* Hover Instructions */}
                       <div className="absolute inset-0 bg-black/0 hover:bg-black/5 transition-colors duration-300 rounded-xl flex items-center justify-center opacity-0 hover:opacity-100 pointer-events-none">
                         <div className="bg-white/90 backdrop-blur-sm px-4 py-2 rounded-full text-sm text-amber-900 font-medium">
-                          Click pages to zoom
+                          {readerState.leftPageZoom > 1 || readerState.rightPageZoom > 1 ? 'Drag to pan' : 'Use zoom controls to zoom in'}
                         </div>
                       </div>
                     </div>
@@ -954,15 +1152,6 @@ const handleHighlightText = (charIndex: number, isActive: boolean) => {
           onHighlightText={handleHighlightText}
         />
       )}
-      {/* Fullscreen Image Zoom Modal */}
-      {readerState.zoomedImage && pageZoomNumber > 0 && (
-        <ZoomModal
-          imageUrl={readerState.zoomedImage}
-          onClose={closeImageZoom}
-          pageNumber={pageZoomNumber}
-        />
-      )}
-
       {/* AI Reading Modal */}
       <AIReadingModal
         isOpen={isAIReadingModalOpen}
