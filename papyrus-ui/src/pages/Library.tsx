@@ -5,8 +5,7 @@ import type { BookDocument } from "../services/models/BookDocument";
 import type { PagedResponse } from "../services/models/PagedResponse";
 import { documentApi } from "../services/DocumentRetrievalService";
 import Pagination from "../components/common/Pagination";
-import { useNavigate } from "react-router-dom";
-
+import { useLocation, useNavigate } from "react-router-dom";
 
 const Library: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState("");
@@ -21,41 +20,52 @@ const Library: React.FC = () => {
     pagination: {
       page: 1,
       size: 12,
-      total: 0
-    }
+      total: 0,
+    },
   });
 
-  const fetchBooks = async () => {
+  const location = useLocation();
+  const userId = location.state?.userId;
+
+  const fetchBooks = async (userId: string) => {
     setLoading(true);
+    console.log(userId);
     try {
-      const data = await documentApi.getBooks(currentPage, pageSize)
+      const data = await documentApi.getBooks(userId,currentPage, pageSize);
       setBooksData(data);
     } catch (error) {
-      console.error('Error fetching books:', error);
+      console.error("Error fetching books:", error);
     } finally {
       setLoading(false);
     }
   };
-const fetchFilteredBooks = async (e: React.ChangeEvent<HTMLInputElement>) => {
-  const newSearchTerm = e.target.value;
-  setSearchTerm(newSearchTerm);
-  console.log(newSearchTerm);
-  
-  if (newSearchTerm.length > 3 || newSearchTerm.length === 0) {
-    try {
-      setLoading(true);
-      const data = await documentApi.getBooks(currentPage, pageSize, newSearchTerm);
-      setBooksData(data);
-    } catch (error) {
-      console.error('Error fetching books:', error);
-    } finally {
-      setLoading(false);
+  const fetchFilteredBooks = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newSearchTerm = e.target.value;
+    setSearchTerm(newSearchTerm);
+
+    if (newSearchTerm.length > 3 || newSearchTerm.length === 0) {
+      try {
+        setLoading(true);
+        const data = await documentApi.getBooks(
+          userId,
+          currentPage,
+          pageSize,
+          newSearchTerm
+        );
+        setBooksData(data);
+      } catch (error) {
+        console.error("Error fetching books:", error);
+      } finally {
+        setLoading(false);
+      }
     }
-  }
-};
+  };
 
   useEffect(() => {
-    fetchBooks();
+    if(userId === undefined || userId === null){
+      navigate("/login");
+    }
+    fetchBooks(userId);
   }, [currentPage, pageSize]);
 
   useEffect(() => {
@@ -66,18 +76,20 @@ const fetchFilteredBooks = async (e: React.ChangeEvent<HTMLInputElement>) => {
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', { 
-      year: 'numeric', 
-      month: 'short', 
-      day: 'numeric' 
+    return date.toLocaleDateString("en-US", {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
     });
   };
 
   const getTimeAgo = (dateString: string) => {
     const date = new Date(dateString);
     const now = new Date();
-    const diffInDays = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24));
-    
+    const diffInDays = Math.floor(
+      (now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24)
+    );
+
     if (diffInDays === 0) return "Today";
     if (diffInDays === 1) return "Yesterday";
     if (diffInDays < 7) return `${diffInDays} days ago`;
@@ -85,7 +97,7 @@ const fetchFilteredBooks = async (e: React.ChangeEvent<HTMLInputElement>) => {
     return `${Math.floor(diffInDays / 30)} months ago`;
   };
 
-    const BookCard = ({ book }: { book: BookDocument }) => (
+  const BookCard = ({ book }: { book: BookDocument }) => (
     <div className="group relative bg-white/60 backdrop-blur-sm border border-amber-200/50 rounded-2xl p-4 hover:shadow-xl hover:shadow-amber-200/20 transition-all duration-300 hover:-translate-y-1">
       {/* Book Cover */}
       <div className="relative mb-4 overflow-hidden rounded-xl">
@@ -103,14 +115,19 @@ const fetchFilteredBooks = async (e: React.ChangeEvent<HTMLInputElement>) => {
             </div>
           </div>
         )}
-        
+
         {/* New badge for recently added books */}
         {(() => {
-          const daysAgo = Math.floor((new Date().getTime() - new Date(book.createdAt).getTime()) / (1000 * 60 * 60 * 24));
-          return daysAgo <= 3 && (
-            <div className="absolute top-2 right-2 bg-green-500 text-white text-xs px-2 py-1 rounded-full">
-              New
-            </div>
+          const daysAgo = Math.floor(
+            (new Date().getTime() - new Date(book.createdAt).getTime()) /
+              (1000 * 60 * 60 * 24)
+          );
+          return (
+            daysAgo <= 3 && (
+              <div className="absolute top-2 right-2 bg-green-500 text-white text-xs px-2 py-1 rounded-full">
+                New
+              </div>
+            )
           );
         })()}
       </div>
@@ -124,10 +141,12 @@ const fetchFilteredBooks = async (e: React.ChangeEvent<HTMLInputElement>) => {
           {book.author ? (
             <p className="text-amber-700/80 text-sm">by {book.author}</p>
           ) : (
-            <p className="text-amber-600/60 text-sm italic">No author specified</p>
+            <p className="text-amber-600/60 text-sm italic">
+              No author specified
+            </p>
           )}
         </div>
-        
+
         {/* Book Stats */}
         <div className="flex items-center justify-between text-xs text-amber-700">
           <span className="bg-amber-100 px-2 py-1 rounded-full">
@@ -138,7 +157,14 @@ const fetchFilteredBooks = async (e: React.ChangeEvent<HTMLInputElement>) => {
 
         {/* Actions */}
         <div className="flex gap-2 pt-2">
-          <Button variant="primary" size="sm" className="flex-1" to="/reader" params={{id: book.documentGroupId}} state={{name: book.name, author: book.author}}>
+          <Button
+            variant="primary"
+            size="sm"
+            className="flex-1"
+            to="/reader"
+            params={{ id: book.documentGroupId }}
+            state={{ name: book.name, author: book.author, userId: userId }}
+          >
             Read
           </Button>
           <button className="px-3 py-2 text-amber-700 hover:bg-amber-100 rounded-lg transition-colors">
@@ -163,14 +189,16 @@ const fetchFilteredBooks = async (e: React.ChangeEvent<HTMLInputElement>) => {
           <div className="text-xl">📄</div>
         </div>
       )}
-      
+
       {/* Book Info */}
       <div className="flex-1 min-w-0">
         <h3 className="font-semibold text-amber-900 truncate">{book.name}</h3>
         {book.author ? (
           <p className="text-amber-700/80 text-sm truncate">by {book.author}</p>
         ) : (
-          <p className="text-amber-600/60 text-sm italic">No author specified</p>
+          <p className="text-amber-600/60 text-sm italic">
+            No author specified
+          </p>
         )}
         <div className="flex items-center gap-4 mt-2">
           <span className="inline-block bg-amber-100 text-amber-800 text-xs px-2 py-1 rounded-full">
@@ -181,7 +209,7 @@ const fetchFilteredBooks = async (e: React.ChangeEvent<HTMLInputElement>) => {
           </span>
         </div>
       </div>
-      
+
       {/* Actions */}
       <div className="flex items-center gap-2 flex-shrink-0">
         <Button variant="primary" size="sm">
@@ -200,14 +228,10 @@ const fetchFilteredBooks = async (e: React.ChangeEvent<HTMLInputElement>) => {
       <Navbar
         rightContent={
           <div className="flex items-center gap-3">
-            <Button variant="primary" size="sm" to="/">
+            <Button variant="primary" size="sm" to="/"
+            state={{userId: userId}}
+            >
               Home
-            </Button>
-            <Button variant="primary" size="sm" to="/dashboard">
-              Dashboard
-            </Button>
-            <Button variant="primary" size="sm" to="/library">
-              Library
             </Button>
           </div>
         }
@@ -218,7 +242,7 @@ const fetchFilteredBooks = async (e: React.ChangeEvent<HTMLInputElement>) => {
         <div className="mb-8">
           <div className="flex items-center justify-between mb-4">
             <h1 className="text-4xl font-bold text-amber-950">My Library</h1>
-            <Button variant="primary" to="/upload">
+            <Button variant="primary" to="/upload" state={{userId: userId}}>
               + Add New Book
             </Button>
           </div>
@@ -311,10 +335,18 @@ const fetchFilteredBooks = async (e: React.ChangeEvent<HTMLInputElement>) => {
                 <>Books ({booksData.pagination.total.toLocaleString()} total)</>
               )}
             </h2>
-            
+
             {!loading && booksData.pagination.total > 0 && (
               <div className="text-sm text-amber-700">
-                Showing {((booksData.pagination.page - 1) * booksData.pagination.size) + 1} - {Math.min(booksData.pagination.page * booksData.pagination.size, booksData.pagination.total)} of {booksData.pagination.total.toLocaleString()}
+                Showing{" "}
+                {(booksData.pagination.page - 1) * booksData.pagination.size +
+                  1}{" "}
+                -{" "}
+                {Math.min(
+                  booksData.pagination.page * booksData.pagination.size,
+                  booksData.pagination.total
+                )}{" "}
+                of {booksData.pagination.total.toLocaleString()}
               </div>
             )}
           </div>
@@ -333,12 +365,13 @@ const fetchFilteredBooks = async (e: React.ChangeEvent<HTMLInputElement>) => {
           {!loading && booksData.items.length === 0 && (
             <div className="text-center py-12">
               <div className="text-6xl mb-4">📚</div>
-              <h3 className="text-xl font-semibold text-amber-900 mb-2">No books found</h3>
+              <h3 className="text-xl font-semibold text-amber-900 mb-2">
+                No books found
+              </h3>
               <p className="text-amber-700/80 mb-6">
-                {searchTerm 
-                  ? "Try adjusting your search terms" 
-                  : "Start building your library by uploading your first book"
-                }
+                {searchTerm
+                  ? "Try adjusting your search terms"
+                  : "Start building your library by uploading your first book"}
               </p>
               {!searchTerm && (
                 <Button variant="primary" to="/upload">
@@ -351,16 +384,20 @@ const fetchFilteredBooks = async (e: React.ChangeEvent<HTMLInputElement>) => {
           {/* Books Display */}
           {!loading && booksData.items.length > 0 && (
             <>
-              <div className={
-                viewMode === "grid" 
-                  ? "grid md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6"
-                  : "space-y-4"
-              }>
-                {booksData.items.map(book => (
-                  viewMode === "grid" 
-                    ? <BookCard key={book.documentGroupId} book={book} />
-                    : <BookListItem key={book.documentGroupId} book={book} />
-                ))}
+              <div
+                className={
+                  viewMode === "grid"
+                    ? "grid md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6"
+                    : "space-y-4"
+                }
+              >
+                {booksData.items.map((book) =>
+                  viewMode === "grid" ? (
+                    <BookCard key={book.documentGroupId} book={book} />
+                  ) : (
+                    <BookListItem key={book.documentGroupId} book={book} />
+                  )
+                )}
               </div>
 
               {/* Pagination */}

@@ -1,29 +1,19 @@
-import axios from "axios";
-import type { ApiConfig } from "./models/ApiConfig";
+import axiosInstance from "./AxiosInstance";
 import type { Response } from "./models/Response";
 
 
 
 class DocumentUploadService {
-  private axiosInstance;
-  constructor(config: ApiConfig) {
-    this.axiosInstance = axios.create({
-      baseURL: config.baseUrl,
-      timeout: config.timeout || 30000,
-      headers: {
-        ...config.headers,
-      },
-    });
-  }
 
-  async uploadPDF(file: File): Promise<Response> {
+  async uploadPDF(file: File, userId: string): Promise<Response> {
     const formData = new FormData();
     formData.append("pdfFile", file);
     try {
-      const response = await this.axiosInstance.post("/document/save", formData, {
+      const response = await axiosInstance.post(`/document/${userId}/save`, formData, {
         headers: {
             'Content-Type': 'multipart/form-data'
-        }
+        },
+        timeout: 180000,
       });
 
       if (response.status != 200) {
@@ -44,9 +34,6 @@ class DocumentUploadService {
   }
 }
 
-export const papyrusApi = new DocumentUploadService({
-    baseUrl: import.meta.env.VITE_PAPYRUS_BASE_URL,
-    timeout: 30000
-});
+export const papyrusApi = new DocumentUploadService();
 
 export default DocumentUploadService;

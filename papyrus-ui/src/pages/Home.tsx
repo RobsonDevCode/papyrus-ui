@@ -2,21 +2,26 @@ import React from "react";
 import Button from "../components/common/Button";
 import Navbar from "../components/common/Navigation";
 import Card from "../components/common/Card";
+import { useLocation } from "react-router-dom";
 
 const Home: React.FC = () => {
+  const location = useLocation();
+  const userId = location.state?.userId || localStorage.getItem('userId');
+  
   return (
     <div className="min-h-screen w-full bg-gradient-to-br from-amber-50 via-orange-50 to-rose-50">
       {/* Navigation */}
       <Navbar
         rightContent={
           <div className="flex items-center gap-3">
-            <Button variant="primary" size="sm" to="/">
-              Home
+            <Button variant="primary" size="sm" to="/login">
+              Login
             </Button>
             <Button variant="primary" size="sm" to="/dashboard">
               Get Started
             </Button>
-            <Button variant="primary" size="sm" to="/library">Library</Button>
+            <Button variant="primary" size="sm" to="/library"
+            state={{userId: userId}}>Library</Button>
           </div>
         }
       />

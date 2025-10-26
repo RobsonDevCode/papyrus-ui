@@ -19,6 +19,7 @@
   "devDependencies": {
     "@eslint/js": "^9.33.0",
     "@types/axios": "^0.9.36",
+    "@types/node": "^24.9.1",
     "@types/react": "^19.1.10",
     "@types/react-dom": "^19.1.7",
     "@types/react-router-dom": "^5.3.3",

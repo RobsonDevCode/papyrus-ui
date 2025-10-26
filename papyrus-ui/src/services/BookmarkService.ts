@@ -1,23 +1,11 @@
-import type { ApiConfig } from "./models/ApiConfig";
+import axiosInstance from "./AxiosInterceptor";
 import type { Bookmark } from "./models/Bookmark";
 import type { Response } from "./models/Response";
-import axios from "axios";
 
 class BookMarkApiService {
-  private axiosInstance;
-  constructor(config: ApiConfig) {
-    this.axiosInstance = axios.create({
-      baseURL: config.baseUrl,
-      timeout: config.timeout || 30000,
-      headers: {
-        ...config.headers,
-      },
-    });
-  }
-
   async createBookmark(request: Bookmark): Promise<Response> {
     try {
-      const response = await this.axiosInstance.post("bookmarks", request);
+      const response = await axiosInstance.post("bookmarks", request);
       if (response.status != 200) {
         throw new Error(
           `Error creating bookmark server responded with ${response.status}: ${response.statusText}`
@@ -40,7 +28,7 @@ class BookMarkApiService {
 
   async getBookmark(documentGroupId: string): Promise<Bookmark | undefined> {
     try {
-      const response = await this.axiosInstance.get<Bookmark>(
+      const response = await axiosInstance.get<Bookmark>(
         `bookmark/${documentGroupId}`,
         {
           headers: { Accept: "application/json" },
@@ -78,7 +66,4 @@ class BookMarkApiService {
   }
 }
 
-export const bookmarkApi = new BookMarkApiService({
-  baseUrl: import.meta.env.VITE_PAPYRUS_BASE_URL,
-  timeout: 30000,
-});
+export const bookmarkApi = new BookMarkApiService();

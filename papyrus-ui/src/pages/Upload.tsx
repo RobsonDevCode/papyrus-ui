@@ -1,7 +1,8 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import Button from '../components/common/Button';
 import { papyrusApi } from '../services/DocumentUploadService';
 import Navbar from '../components/common/Navigation';
+import { useLocation, useNavigate } from 'react-router-dom';
 
 interface UploadState {
   isDragging: boolean;
@@ -12,6 +13,10 @@ interface UploadState {
 }
 
 const Upload: React.FC = () => {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const userId = location.state?.userId || localStorage.getItem('userId');
+  
   const [uploadState, setUploadState] = useState<UploadState>({
     isDragging: false,
     isUploading: false,
@@ -19,6 +24,17 @@ const Upload: React.FC = () => {
     uploadedFileName: null,
     error: null,
   });
+
+  // Redirect to library after successful upload
+  useEffect(() => {
+    if (uploadState.isSuccess) {
+      const timer = setTimeout(() => {
+        navigate('/library', { state: { userId } });
+      }, 1500); // 1.5 second delay to show success message
+
+      return () => clearTimeout(timer);
+    }
+  }, [uploadState.isSuccess, navigate, userId]);
 
   // Handle file validation
   const validateFile = (file: File): string | null => {
@@ -40,7 +56,7 @@ const Upload: React.FC = () => {
     }));
 
     try {
-      const response = await papyrusApi.uploadPDF(file);
+      const response = await papyrusApi.uploadPDF(file, userId);
 
       if (response.success) {
         setUploadState(prev => ({ 
@@ -124,7 +140,8 @@ const Upload: React.FC = () => {
             <Button variant="primary" size="sm" to="/">
               Home
             </Button>
-            <Button variant="primary" size="sm" to="/library">
+            <Button variant="primary" size="sm" to="/library"
+            state={{userId: userId}}>
               Library
             </Button>
           </div>
@@ -152,14 +169,7 @@ const Upload: React.FC = () => {
               <p className="text-green-700 mb-4">
                 <span className="font-medium">{uploadState.uploadedFileName}</span> has been uploaded successfully
               </p>
-              <div className="flex gap-4 justify-center">
-                <Button variant="primary" size="lg" to="/library">
-                  View Library
-                </Button>
-                <Button variant="secondary" size="lg" onClick={resetUpload}>
-                  Upload Another
-                </Button>
-              </div>
+              <p className="text-green-600 text-sm">Redirecting to library...</p>
             </div>
           ) : uploadState.isUploading ? (
             // Loading State
