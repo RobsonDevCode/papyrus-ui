@@ -7,6 +7,9 @@ class AudioService {
     const response = await axiosInstance.post<AudioWithAlignment>(
       `text-to-speech`,
       request,
+      {
+        timeout: 180000
+      }
     );
 
     if (response.status !== 200) {

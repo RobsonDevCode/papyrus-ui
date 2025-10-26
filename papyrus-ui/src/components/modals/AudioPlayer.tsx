@@ -42,7 +42,7 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
   const [volume, setVolume] = useState(1);
-  const [playbackRate, setPlaybackRate] = useState(1);
+  const [playbackRate, setPlaybackRate] = useState(voiceSettings.speed);
   const [nextAudio, setNextAudio] = useState<HTMLAudioElement | null>(null);
   const [hasPreGenerated, setHasPreGenerated] = useState(false);
   const [currentAlignment, setCurrentAlignment] = useState<
@@ -188,7 +188,6 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({
   }, [currentTime, isPlaying, onHighlightText, timingData]);
 
   useEffect(() => {
-    // Skip if this is an auto-advance from handleAudioEnd
     if (isAutoAdvancingRef.current) {
       isAutoAdvancingRef.current = false;
       return;
