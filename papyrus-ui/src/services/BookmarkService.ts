@@ -1,12 +1,14 @@
 import axiosInstance from "./AxiosInterceptor";
 import type { Bookmark } from "./models/Bookmark";
+import type { CreateBookmarkRequet } from "./models/CreateBookmark";
 import type { Response } from "./models/Response";
 
 class BookMarkApiService {
-  async createBookmark(request: Bookmark): Promise<Response> {
+  async createBookmark(request: CreateBookmarkRequet): Promise<Response> {
     try {
-      const response = await axiosInstance.post("bookmarks", request);
-      if (response.status != 200) {
+      const response = await axiosInstance.post("bookmark", request);
+      console.log(`response ${response.status}`);
+      if (response.status !== 201) {
         throw new Error(
           `Error creating bookmark server responded with ${response.status}: ${response.statusText}`
         );
@@ -14,7 +16,7 @@ class BookMarkApiService {
 
       const result: Response = {
         success: true,
-        message: `Bookmark ${request.id} created`,
+        message: `Bookmar created`,
       };
       return result;
     } catch (error) {
@@ -26,10 +28,10 @@ class BookMarkApiService {
     }
   }
 
-  async getBookmark(documentGroupId: string): Promise<Bookmark | undefined> {
+  async getBookmark(documentGroupId: string, userId: string): Promise<Bookmark | undefined> {
     try {
       const response = await axiosInstance.get<Bookmark>(
-        `bookmark/${documentGroupId}`,
+        `bookmark/${userId}/${documentGroupId}`,
         {
           headers: { Accept: "application/json" },
           validateStatus: (status) => status < 500,
@@ -46,14 +48,7 @@ class BookMarkApiService {
         );
       }
 
-      const bookmark: Bookmark = {
-        id: response.data.id,
-        documentGroupId: response.data.documentGroupId,
-        page: response.data.page,
-        createdAt: new Date(response.data.createdAt),
-      };
-
-      return bookmark;
+      return response.data;
     } catch (error) {
       throw new Error(
         `Get Failed: ${

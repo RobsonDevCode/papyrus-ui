@@ -4,9 +4,9 @@ import { useNavigate } from 'react-router-dom';
 
 interface ButtonProps {
   children: React.ReactNode;
-  variant?: 'primary' | 'secondary' | 'ghost';
+  variant?: 'primary' | 'secondary' | 'ghost' | 'preview' | 'preview-active' | 'preview-light';
   size?: 'sm' | 'md' | 'lg';
-  onClick?: () => void;
+  onClick?: (e?: React.MouseEvent<HTMLButtonElement>) => void;
   to?: string;
   params?: Record<string, string>;
   state?: any;
@@ -29,7 +29,7 @@ const Button: React.FC<ButtonProps> = ({
 }) => {
   const navigate = useNavigate();
 
-  const handleClick = () => {
+  const handleClick = (e: React.MouseEvent<HTMLButtonElement>) => {
     if (disabled) return;
     
     if (to) {
@@ -46,17 +46,26 @@ const Button: React.FC<ButtonProps> = ({
         navigate(route);
       }
     } else if (onClick) {
-      onClick();
+      onClick(e);
     }
   };
+  
+  // Check if variant is a preview type (simpler styling)
+  const isPreviewVariant = variant === 'preview' || variant === 'preview-active' || variant === 'preview-light';
+  
   // Base styles that all buttons share
-  const baseStyles = 'font-semibold rounded-xl transition-all duration-300 transform hover:-translate-y-1 shadow-xl hover:shadow-2xl disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none';
+  const baseStyles = isPreviewVariant
+    ? 'font-medium rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed'
+    : 'font-semibold rounded-xl transition-all duration-300 transform hover:-translate-y-1 shadow-xl hover:shadow-2xl disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none';
 
   // Variant styles
   const variantStyles = {
     primary: 'bg-gradient-to-r from-amber-700 to-amber-800 hover:from-amber-800 hover:to-amber-900 text-white',
     secondary: 'bg-white/50 backdrop-blur-sm hover:bg-white/70 text-amber-900 border border-amber-200/50',
     ghost: 'bg-amber-800/90 hover:bg-amber-900 text-white backdrop-blur-sm',
+    preview: 'bg-amber-200 hover:bg-amber-300 text-amber-800',
+    'preview-light': 'bg-amber-100 hover:bg-amber-200 text-amber-700',
+    'preview-active': 'bg-green-100 text-green-700 cursor-not-allowed'
   };
 
   // Size styles

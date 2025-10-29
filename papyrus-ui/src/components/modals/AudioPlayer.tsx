@@ -5,6 +5,7 @@ import type { VoiceSettings } from "../../services/models/VoiceSettings";
 import type { AlignmentData } from "../../services/models/AlignmentData";
 import type { AudioWithAlignment } from "../../services/models/AudioWithAlignment";
 import { useLocation } from "react-router-dom";
+import type { Bookmark } from "../../services/models/Bookmark";
 
 interface AudioPlayerProps {
   isVisible: boolean;
@@ -14,10 +15,12 @@ interface AudioPlayerProps {
   currentRightPage: number;
   totalPages: number;
   documentId: string;
+  currentBookmark: Bookmark | undefined;
   onPageChange: (pageNumber: number) => void;
   onClose: () => void;
   onGetPageText: (leftPage: number, rightPage: number) => Promise<string>;
   onHighlightText?: (charIndex: number, isActive: boolean) => void;
+  onCreateBookmark: (timestamp: number, page: number) => Promise<void>;
 }
 
 const AudioPlayer: React.FC<AudioPlayerProps> = ({
@@ -28,10 +31,12 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({
   currentRightPage,
   totalPages,
   documentId,
+  currentBookmark,
   onPageChange,
   onClose,
   onGetPageText,
   onHighlightText,
+  onCreateBookmark
 }) => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
@@ -321,6 +326,10 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({
         setCurrentAudio(audio);
         setCurrentAlignment(audioData.alignment);
         audioRef.current = audio;
+        console.log(`bookmark page ${currentBookmark?.page} current page ${currentLeftPage}`);
+        if(currentBookmark && currentBookmark.page === currentLeftPage){
+           audio.currentTime = currentBookmark.timestamp;
+        }
 
         audio.onloadedmetadata = () => {
           setDuration(audio.duration);
@@ -556,6 +565,19 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({
 
   if (!isVisible) return null;
 
+  const createBookmark = async () => {
+      try{
+        let timestamp = 0.00;
+        if(currentTime !== null){
+          timestamp = currentTime
+        }
+
+        await onCreateBookmark(timestamp, currentLeftPage);
+      }catch(error){
+          throw new Error(`Failed to create book mark`)
+      }
+    }
+  
   return (
     <div
       className={`fixed right-6 top-1/2 transform -translate-y-1/2 z-30 transition-all duration-300 ${
@@ -565,15 +587,6 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({
       <div className="bg-amber-50/95 backdrop-blur-xl rounded-2xl shadow-xl border border-amber-200/50 overflow-hidden">
         {!isExpanded && (
           <div className="flex flex-col items-center p-5 space-y-3">
-            <div className="w-10 h-10 bg-amber-100 rounded-xl flex items-center justify-center shadow-sm">
-              <svg
-                className="w-6 h-6 text-amber-700"
-                fill="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path d="M19,2L14,6.5V17.5L19,13V2M6.5,5C4.55,5 2.45,5.4 1,6.5V21.16C1,21.41 1.25,21.66 1.5,21.66C1.6,21.66 1.65,21.59 1.75,21.59C3.1,20.94 5.05,20.68 6.5,20.68C8.45,20.68 10.55,21.1 12,22C13.35,21.15 15.8,20.68 17.5,20.68C19.15,20.68 20.85,21.1 22.25,21.59C22.35,21.59 22.4,21.66 22.5,21.66C22.75,21.66 23,21.41 23,21.16V6.5C22.4,6.05 21.75,5.75 21,5.5V19C19.9,18.65 18.7,18.5 17.5,18.5C15.8,18.5 13.35,18.9 12,19.8C10.55,18.9 8.45,18.5 6.5,18.5C5.3,18.5 4.1,18.65 3,19V6.5C4.45,5.4 6.55,5 8.5,5H9V7H8.5C7.55,7 6.45,7.15 5.5,7.5V9C6.45,8.65 7.55,8.5 8.5,8.5S10.55,8.65 11.5,9V7.5C10.55,7.15 9.45,7 8.5,7H8V5H8.5C9.45,5 10.55,5.15 11.5,5.5V4C10.55,3.65 9.45,3.5 8.5,3.5C7.55,3.5 6.45,3.65 5.5,4V5.5C6.45,5.15 7.55,5 8.5,5H9Z" />
-              </svg>
-            </div>
 
             <div className="text-amber-800 text-xs font-mono bg-amber-100/50 px-2 py-1 rounded-lg">
               {formatTime(currentTime)}
@@ -628,6 +641,7 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({
 
             <button
               onClick={() => setIsExpanded(true)}
+              title="Expand Player"
               className="w-10 h-10 bg-amber-200/50 hover:bg-amber-200 rounded-xl flex items-center justify-center transition-colors"
             >
               <svg
@@ -645,7 +659,11 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({
               </svg>
             </button>
 
-            <button className="w-10 h-10 bg-amber-200/50 hover:bg-amber-200 rounded-xl flex items-center justify-center transition-colors">
+            <button className="w-10 h-10 bg-amber-200/50 hover:bg-amber-200 rounded-xl flex items-center justify-center transition-colors"
+             title="Create bookmark"
+             onClick={async() => {
+              await createBookmark();
+            }}>
               <svg
                 className="w-5 h-5 text-amber-700"
                 fill="none"
@@ -656,7 +674,10 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({
                   strokeLinecap="round"
                   strokeLinejoin="round"
                   strokeWidth={2}
-                  d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"
+                  d="M19,2L14,6.5V17.5L19,13V2M6.5,5C4.55,5 2.45,5.4 1,6.5V21.16C1,21.41 1.25,21.66 1.5,21.66C1.6,21.66 1.65,21.59 1.75,21.59C3.1,20.94 5.05,20.68 6.5,20.68C8.45,20.68 10.55,21.1 12,22C13.35,21.15 15.8,20.68 17.5,20.68C19.15,20.68 20.85,21.1 22.25,21.59C22.35,21.59 22.4,21.66 22.5,21.66C22.75,21.66 23,21.41 23,21.16V6.5C22.4,6.05 21.75,5.75 21,5.5V19C19.9,18.65 18.7,18.5 17.5,18.5C15.8,18.5 13.35,18.9 12,19.8C10.55,18.9 8.45,18.5 6.5,18.5C5.3,18.5 4.1,18.65 3,19V6.5C4.45,5.4 6.55,5 8.5,
+                  5H9V7H8.5C7.55,7 6.45,7.15 5.5,7.5V9C6.45,8.65 7.55,8.5 8.5,8.5S10.55,8.65 11.5,9V7.5C10.55,
+                  7.15 9.45,7 8.5,7H8V5H8.5C9.45,5 10.55,5.15 11.5,5.5V4C10.55,3.65 9.45,3.5 8.5,3.5C7.55,
+                  3.5 6.45,3.65 5.5,4V5.5C6.45,5.15 7.55,5 8.5,5H9Z"
                 />
               </svg>
             </button>

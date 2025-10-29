@@ -8,11 +8,12 @@ import type { Paginiation } from "../../services/models/Pagination";
 import Dropdown from "../common/Dropdown";
 import type { SetUpAudioSettingsRequest } from "../../services/models/SetUpAudioSettingsRequest";
 import { useLocation } from "react-router-dom";
-
+import type { AudioSettings } from "../../services/models/AudioSettings";
 
 
 interface AIReadingModalProps {
   isOpen: boolean;
+  userAudioSettings: AudioSettings | undefined;
   onClose: () => void;
   onSave: (config: SetUpAudioSettingsRequest) => void;
   documentId: string;
@@ -28,7 +29,12 @@ const AIReadingModal: React.FC<AIReadingModalProps> = ({
   onClose,
   onSave,
   documentId,
+  userAudioSettings,
 }) => {
+  // Determine if we're in edit mode
+  const isEditMode = !!userAudioSettings;
+  const [isEditingVoice, setIsEditingVoice] = useState<boolean>(false);
+
   const [selectedVoiceId, setSelectedVoiceId] = useState<string>("");
   const [voiceSettings, setVoiceSettings] = useState<VoiceSettings>({
     stability: 0.75,
@@ -164,15 +170,26 @@ const AIReadingModal: React.FC<AIReadingModalProps> = ({
     if (isOpen) {
       fetchVoicesWithFilters(filter);
       
-      const defaultVoice = voices.find((voice) => voice.isSelected);
-      if (defaultVoice) {
-        setSelectedVoiceId(defaultVoice.voiceId);
-        if (defaultVoice.settings) {
-          setVoiceSettings(defaultVoice.settings);
+      // Initialize with existing settings in edit mode
+      if (isEditMode && userAudioSettings) {
+        setSelectedVoiceId(userAudioSettings.voiceId);
+        setVoiceSettings({
+          stability: userAudioSettings.voiceSettings.stability,
+          useSpeakerBoost: userAudioSettings.voiceSettings.useSpeakerBoost,
+          speed: userAudioSettings.voiceSettings.speed,
+        });
+      } else {
+        // In setup mode, use default voice if available
+        const defaultVoice = voices.find((voice) => voice.isSelected);
+        if (defaultVoice) {
+          setSelectedVoiceId(defaultVoice.voiceId);
+          if (defaultVoice.settings) {
+            setVoiceSettings(defaultVoice.settings);
+          }
         }
       }
     }
-  }, [isOpen]);
+  }, [isOpen, isEditMode, userAudioSettings]);
 
   useEffect(() => {
     const selectedVoice = voices.find(
@@ -293,6 +310,7 @@ const AIReadingModal: React.FC<AIReadingModalProps> = ({
     };
     setFilter(resetFilter);
     setShowFavoritesOnly(false);
+    setIsEditingVoice(false);
     onClose();
   };
 
@@ -305,7 +323,7 @@ const AIReadingModal: React.FC<AIReadingModalProps> = ({
         <div className="bg-gradient-to-r from-amber-100 to-orange-100 px-6 py-4 border-b border-amber-200/50">
           <div className="flex items-center justify-between">
             <h2 className="text-2xl font-bold text-amber-900 flex items-center gap-2">
-              🎙️ AI Reading Setup
+              🎙️ {isEditMode ? "Edit Audio Settings" : "AI Reading Setup"}
             </h2>
             <button
               onClick={handleClose}
@@ -327,7 +345,10 @@ const AIReadingModal: React.FC<AIReadingModalProps> = ({
             </button>
           </div>
           <p className="text-amber-700 mt-1">
-            Choose a voice and adjust settings for AI narration
+            {isEditMode 
+              ? "Update your voice and playback preferences" 
+              : "Choose a voice and adjust settings for AI narration"
+            }
           </p>
         </div>
 
@@ -397,14 +418,12 @@ const AIReadingModal: React.FC<AIReadingModalProps> = ({
                       </div>
                       <div className="flex items-center gap-2">
                         {/* Preview Button */}
-                        <button
+                        <Button
+                          variant={playingVoiceId === currentVoice.voiceId ? 'preview-active' : 'preview'}
+                          size="sm"
                           onClick={() => handlePreviewVoice(currentVoice)}
                           disabled={playingVoiceId === currentVoice.voiceId}
-                          className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${
-                            playingVoiceId === currentVoice.voiceId
-                              ? "bg-green-100 text-green-700 cursor-not-allowed"
-                              : "bg-amber-200 hover:bg-amber-300 text-amber-800"
-                          }`}
+                          className="flex items-center gap-2 px-3 py-1.5"
                         >
                           {playingVoiceId === currentVoice.voiceId ? (
                             <>
@@ -423,28 +442,51 @@ const AIReadingModal: React.FC<AIReadingModalProps> = ({
                               Preview
                             </>
                           )}
-                        </button>
+                        </Button>
                         
-                        {/* Remove/Deselect Button */}
-                        <button
-                          onClick={handleDeselectVoice}
-                          className="p-1.5 hover:bg-red-100 rounded-lg transition-colors text-red-600 hover:text-red-700"
-                          title="Remove selection"
-                        >
-                          <svg
-                            className="w-4 h-4"
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
+                        {/* Edit/Remove Button */}
+                        {isEditMode ? (
+                          <Button
+                            onClick={() => setIsEditingVoice(true)}
+                            className="px-3 py-1.5 rounded-lg text-sm font-medium transition-all flex items-center gap-2"
+                            variant="secondary"
                           >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2}
-                              d="M6 18L18 6M6 6l12 12"
-                            />
-                          </svg>
-                        </button>
+                            <svg
+                              className="w-4 h-4"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+                              />
+                            </svg>
+                            Edit
+                          </Button>
+                        ) : (
+                          <button
+                            onClick={handleDeselectVoice}
+                            className="p-1.5 hover:bg-red-100 rounded-lg transition-colors text-red-600 hover:text-red-700"
+                            title="Remove selection"
+                          >
+                            <svg
+                              className="w-4 h-4"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M6 18L18 6M6 6l12 12"
+                              />
+                            </svg>
+                          </button>
+                        )}
                       </div>
                     </div>
                   ) : (
@@ -460,11 +502,23 @@ const AIReadingModal: React.FC<AIReadingModalProps> = ({
             </div>
           )}
 
-          {/* Voice Selection */}
+          {/* Voice Selection - Only show in setup mode or when editing in edit mode */}
+          {(!isEditMode || isEditingVoice) && (
           <div className="mb-8">
-            <h3 className="text-lg font-semibold text-gray-800 mb-4">
-              Select Voice
-            </h3>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-gray-800">
+                {isEditMode ? "Change Voice" : "Select Voice"}
+              </h3>
+              {isEditMode && (
+                <Button
+                  variant="primary"
+                  onClick={() => setIsEditingVoice(false)}
+                  size="sm"
+                >
+                  Cancel
+                </Button>
+              )}
+            </div>
 
             {/* Search and Filter Controls */}
             <div className="flex flex-col gap-4 mb-6">
@@ -751,17 +805,14 @@ const AIReadingModal: React.FC<AIReadingModalProps> = ({
                             </div>
                           </div>
                         </div>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handlePreviewVoice(voice);
-                          }}
+                        <Button
+                          variant={playingVoiceId === voice.voiceId ? 'preview-active' : 'preview-light'}
+                          size="sm"
+                          onClick={() =>
+                            handlePreviewVoice(voice)
+                          }
                           disabled={playingVoiceId === voice.voiceId}
-                          className={`ml-4 px-3 py-1.5 rounded-lg text-sm font-medium transition-all flex items-center gap-1.5 shrink-0 ${
-                            playingVoiceId === voice.voiceId
-                              ? "bg-green-100 text-green-700 cursor-not-allowed"
-                              : "bg-amber-100 hover:bg-amber-200 text-amber-700"
-                          }`}
+                          className="ml-4 flex items-center gap-1.5 shrink-0 px-3 py-1.5"
                         >
                           {playingVoiceId === voice.voiceId ? (
                             <>
@@ -780,7 +831,7 @@ const AIReadingModal: React.FC<AIReadingModalProps> = ({
                               <span className="hidden sm:inline">Preview</span>
                             </>
                           )}
-                        </button>
+                        </Button>
                       </div>
                     </div>
                   ))}
@@ -860,11 +911,12 @@ const AIReadingModal: React.FC<AIReadingModalProps> = ({
               );
             })()}
           </div>
+          )}
 
           {/* Voice Settings */}
           <div className="bg-gray-50/80 rounded-xl p-6 border border-gray-200">
             <h3 className="text-lg font-semibold text-gray-800 mb-4">
-              Voice Settings
+              {isEditMode ? "Update Voice Settings" : "Voice Settings"}
             </h3>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <div>
@@ -950,7 +1002,7 @@ const AIReadingModal: React.FC<AIReadingModalProps> = ({
             disabled={!selectedVoiceId}
             className="px-6"
           >
-            Start AI Reading
+            {isEditMode ? "Update Settings" : "Start AI Reading"}
           </Button>
         </div>
       </div>
