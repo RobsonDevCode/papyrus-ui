@@ -370,11 +370,11 @@ const BookReader: React.FC = () => {
         leftTextLayerRef.current!
       );
 
-      // Update text elements for this page
-      setTextElements((prev) => [
-        ...prev.filter((el) => el.pageNumber !== readerState.leftPageNumber),
-        ...leftElements,
-      ]);
+      // Update text elements for this page - maintain proper order (left before right)
+      setTextElements((prev) => {
+        const rightPageElements = prev.filter((el) => el.pageNumber === readerState.rightPageNumber);
+        return [...leftElements, ...rightPageElements];
+      });
 
       // Track that we've rendered at this zoom level
       setLeftPageRenderedZoom(readerState.leftPageZoom);
@@ -406,11 +406,11 @@ const BookReader: React.FC = () => {
         rightTextLayerRef.current!
       );
 
-      // Update text elements for this page
-      setTextElements((prev) => [
-        ...prev.filter((el) => el.pageNumber !== readerState.rightPageNumber),
-        ...rightElements,
-      ]);
+      // Update text elements for this page - maintain proper order (left before right)
+      setTextElements((prev) => {
+        const leftPageElements = prev.filter((el) => el.pageNumber === readerState.leftPageNumber);
+        return [...leftPageElements, ...rightElements];
+      });
 
       // Track that we've rendered at this zoom level
       setRightPageRenderedZoom(readerState.rightPageZoom);
@@ -765,7 +765,6 @@ const BookReader: React.FC = () => {
     const initializeReader = async () => {
       try {
         await loadPDF(documentGroupId!, userId);
-        await checkAudioSettings();
       } catch (error) {
         setReaderState((prev) => ({
           ...prev,
@@ -779,6 +778,10 @@ const BookReader: React.FC = () => {
       initializeReader();
     }
   }, [documentGroupId]);
+
+  useEffect(() => {
+  checkAudioSettings();
+}, []);
 
   useEffect(() => {
     const handleKeyPress = (event: KeyboardEvent) => {
@@ -864,6 +867,7 @@ const BookReader: React.FC = () => {
     if (isActive) {
       // Get the Y position and page number of the target element
       const targetTop = parseFloat(targetElement.element.style.top);
+      console.log(targetElement.pageNumber);
       const targetPage = targetElement.pageNumber;
       const tolerance = 2; // pixels tolerance for same line detection
 
@@ -1138,7 +1142,7 @@ const BookReader: React.FC = () => {
                                         readerState.leftPageZoom /
                                         leftPageRenderedZoom
                                       })`,
-                                transformOrigin: "center",
+                                transformOrigin: "top left",
                                 transition:
                                   isDragging === "left"
                                     ? "none"
@@ -1153,11 +1157,25 @@ const BookReader: React.FC = () => {
                               ref={leftTextLayerRef}
                               className="pdf-text-layer absolute top-0 left-0 overflow-hidden leading-none"
                               style={{
-                                pointerEvents: "auto",
+                                pointerEvents: readerState.leftPageZoom > 1 ? "none" : "auto",
                                 userSelect: "text",
                                 WebkitUserSelect: "text",
                                 MozUserSelect: "text",
                                 msUserSelect: "text",
+                                transform:
+                                  readerState.leftPageZoom > 1
+                                    ? `scale(${
+                                        readerState.leftPageZoom /
+                                        leftPageRenderedZoom
+                                      }) translate(${
+                                        readerState.leftPagePan.x
+                                      }px, ${readerState.leftPagePan.y}px)`
+                                    : "none",
+                                transformOrigin: "top left",
+                                transition:
+                                  isDragging === "left"
+                                    ? "none"
+                                    : "transform 0.3s ease-in-out",
                               }}
                             />
                             {/* Page Number - Bottom Left */}
@@ -1290,7 +1308,7 @@ const BookReader: React.FC = () => {
                                               readerState.rightPageZoom /
                                               rightPageRenderedZoom
                                             })`,
-                                      transformOrigin: "center",
+                                      transformOrigin: "top left",
                                       transition:
                                         isDragging === "right"
                                           ? "none"
@@ -1305,11 +1323,27 @@ const BookReader: React.FC = () => {
                                     ref={rightTextLayerRef}
                                     className="pdf-text-layer absolute top-0 left-0 overflow-hidden leading-none"
                                     style={{
-                                      pointerEvents: "auto",
+                                      pointerEvents: readerState.rightPageZoom > 1 ? "none" : "auto",
                                       userSelect: "text",
                                       WebkitUserSelect: "text",
                                       MozUserSelect: "text",
                                       msUserSelect: "text",
+                                      transform:
+                                        readerState.rightPageZoom > 1
+                                          ? `scale(${
+                                              readerState.rightPageZoom /
+                                              rightPageRenderedZoom
+                                            }) translate(${
+                                              readerState.rightPagePan.x
+                                            }px, ${
+                                              readerState.rightPagePan.y
+                                            }px)`
+                                          : "none",
+                                      transformOrigin: "top left",
+                                      transition:
+                                        isDragging === "right"
+                                          ? "none"
+                                          : "transform 0.3s ease-in-out",
                                     }}
                                   />
                                   {/* Page Number - Bottom Right */}

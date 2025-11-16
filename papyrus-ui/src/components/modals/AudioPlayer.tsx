@@ -112,7 +112,6 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({
     }
   }, [currentAlignment, onHighlightText]);
 
-  // Build a flat timing array ONCE when alignment loads
   const [timingData, setTimingData] = useState<
     Array<{
       startTime: number;
@@ -121,7 +120,6 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({
     }>
   >([]);
 
-  // This runs ONCE when alignment changes
   useEffect(() => {
     if (!currentAlignment) {
       setTimingData([]);
@@ -903,7 +901,7 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({
                     type="range"
                     min="0.5"
                     max="2"
-                    step="0.01"
+                    step="0.1"
                     value={playbackRate}
                     onChange={(e) => {
                       const newRate = parseFloat(e.target.value);
